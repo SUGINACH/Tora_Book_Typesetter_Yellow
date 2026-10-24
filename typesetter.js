@@ -25,10 +25,10 @@ function stripEditorialNotes(text) {
 /* מספור עמודים משותף - כדי ששער משנה (אם יוגדר להציג מספר) ישתמש
    באותו פורמט/מסגרת/עמוד-התחלה בדיוק כמו עמודי תוכן רגילים */
 function formatPageNumberDisplay(pNum) {
-    const pageNumPos = document.getElementById('page-num-position')?.value || 'bottom_center';
-    const pageNumFormat = document.getElementById('page-num-format')?.value || 'gematria';
-    const pageNumFrame = document.getElementById('page-num-frame')?.value || 'none';
-    const startIdx = parseInt(document.getElementById('page-num-start-idx')?.value, 10) || 1;
+    const pageNumPos = EngineInputs.el('page-num-position')?.value || 'bottom_center';
+    const pageNumFormat = EngineInputs.el('page-num-format')?.value || 'gematria';
+    const pageNumFrame = EngineInputs.el('page-num-frame')?.value || 'none';
+    const startIdx = parseInt(EngineInputs.el('page-num-start-idx')?.value, 10) || 1;
 
     let displayPageNum = '';
     if (pageNumPos !== 'none' && pNum >= startIdx) {
@@ -89,105 +89,105 @@ function toGematriaWithGeresh(num) {
 
 function updateGrid() {
     const root = document.documentElement;
-    const rawCol = parseFloat(document.getElementById('prop-col')?.value) || 40;
-    const rawMargin = parseFloat(document.getElementById('prop-margin')?.value) || 7.5;
-    const rawGutter = parseFloat(document.getElementById('prop-gutter')?.value) || 2;
-    const rawGap = parseFloat(document.getElementById('prop-gap')?.value) || 2;
+    const rawCol = parseFloat(EngineInputs.el('prop-col')?.value) || 40;
+    const rawMargin = parseFloat(EngineInputs.el('prop-margin')?.value) || 7.5;
+    const rawGutter = parseFloat(EngineInputs.el('prop-gutter')?.value) || 2;
+    const rawGap = parseFloat(EngineInputs.el('prop-gap')?.value) || 2;
     const total = 2 * rawCol + 2 * rawMargin + rawGutter + 2 * rawGap;
     const scale = total > 0 ? 100 / total : 1;
     root.style.setProperty('--w-col', (rawCol * scale) + '%');
     root.style.setProperty('--w-margin', (rawMargin * scale) + '%');
     root.style.setProperty('--w-gutter', (rawGutter * scale) + '%');
     root.style.setProperty('--w-gap', (rawGap * scale) + '%');
-    root.style.setProperty('--flow-mt', (document.getElementById('prop-mt')?.value || 20) + 'px');
-    root.style.setProperty('--flow-mb', (document.getElementById('prop-mb')?.value || 20) + 'px');
-    root.style.setProperty('--flow-mt-h2', (document.getElementById('prop-mt-h2')?.value || 20) + 'px');
+    root.style.setProperty('--flow-mt', (EngineInputs.el('prop-mt')?.value || 20) + 'px');
+    root.style.setProperty('--flow-mb', (EngineInputs.el('prop-mb')?.value || 20) + 'px');
+    root.style.setProperty('--flow-mt-h2', (EngineInputs.el('prop-mt-h2')?.value || 20) + 'px');
 }
 
 /* משתני הגופן והגודל של טקסטי השערים בלבד */
 function updateCoverStyles() {
     const root = document.documentElement;
-    root.style.setProperty('--fn-sh-title', document.getElementById('f-sh-title')?.value || 'serif');
-    root.style.setProperty('--sz-sh-title', (document.getElementById('s-sh-title')?.value || 46) + 'pt');
-    root.style.setProperty('--fn-sh-sub', document.getElementById('f-sh-sub')?.value || 'serif');
-    root.style.setProperty('--sz-sh-sub', (document.getElementById('s-sh-sub')?.value || 21) + 'pt');
-    root.style.setProperty('--fn-sh-desc', document.getElementById('f-sh-desc')?.value || 'serif');
-    root.style.setProperty('--sz-sh-desc', (document.getElementById('s-sh-desc')?.value || 12) + 'pt');
-    root.style.setProperty('--fn-sh-sec', document.getElementById('f-sh-sec')?.value || 'serif');
-    root.style.setProperty('--sz-sh-sec', (document.getElementById('s-sh-sec')?.value || 11.5) + 'pt');
-    root.style.setProperty('--fn-sh-author', document.getElementById('f-sh-author')?.value || 'serif');
-    root.style.setProperty('--sz-sh-author', (document.getElementById('s-sh-author')?.value || 15) + 'pt');
-    root.style.setProperty('--fn-sh-year', document.getElementById('f-sh-year')?.value || 'serif');
-    root.style.setProperty('--sz-sh-year', (document.getElementById('s-sh-year')?.value || 12) + 'pt');
+    root.style.setProperty('--fn-sh-title', EngineInputs.el('f-sh-title')?.value || 'serif');
+    root.style.setProperty('--sz-sh-title', (EngineInputs.el('s-sh-title')?.value || 46) + 'pt');
+    root.style.setProperty('--fn-sh-sub', EngineInputs.el('f-sh-sub')?.value || 'serif');
+    root.style.setProperty('--sz-sh-sub', (EngineInputs.el('s-sh-sub')?.value || 21) + 'pt');
+    root.style.setProperty('--fn-sh-desc', EngineInputs.el('f-sh-desc')?.value || 'serif');
+    root.style.setProperty('--sz-sh-desc', (EngineInputs.el('s-sh-desc')?.value || 12) + 'pt');
+    root.style.setProperty('--fn-sh-sec', EngineInputs.el('f-sh-sec')?.value || 'serif');
+    root.style.setProperty('--sz-sh-sec', (EngineInputs.el('s-sh-sec')?.value || 11.5) + 'pt');
+    root.style.setProperty('--fn-sh-author', EngineInputs.el('f-sh-author')?.value || 'serif');
+    root.style.setProperty('--sz-sh-author', (EngineInputs.el('s-sh-author')?.value || 15) + 'pt');
+    root.style.setProperty('--fn-sh-year', EngineInputs.el('f-sh-year')?.value || 'serif');
+    root.style.setProperty('--sz-sh-year', (EngineInputs.el('s-sh-year')?.value || 12) + 'pt');
 }
 
 function updateStyles() {
     const root = document.documentElement;
     
     // רוחב חלקי כותרת עליונה
-    root.style.setProperty('--hdr-w-r', document.getElementById('hdr-w-r')?.value || '33.33%');
-    root.style.setProperty('--hdr-w-c', document.getElementById('hdr-w-c')?.value || '33.34%');
-    root.style.setProperty('--hdr-w-l', document.getElementById('hdr-w-l')?.value || '33.33%');
+    root.style.setProperty('--hdr-w-r', EngineInputs.el('hdr-w-r')?.value || '33.33%');
+    root.style.setProperty('--hdr-w-c', EngineInputs.el('hdr-w-c')?.value || '33.34%');
+    root.style.setProperty('--hdr-w-l', EngineInputs.el('hdr-w-l')?.value || '33.33%');
 
     // גופני כותרת עליונה
-    root.style.setProperty('--fn-header-r', document.getElementById('f-hdr-r')?.value || 'serif');
-    root.style.setProperty('--sz-header-r', (document.getElementById('s-hdr-r')?.value || 13) + 'pt');
-    root.style.setProperty('--fn-header-c', document.getElementById('f-hdr-c')?.value || 'serif');
-    root.style.setProperty('--sz-header-c', (document.getElementById('s-hdr-c')?.value || 11) + 'pt');
-    root.style.setProperty('--fn-header-l', document.getElementById('f-hdr-l')?.value || 'serif');
-    root.style.setProperty('--sz-header-l', (document.getElementById('s-hdr-l')?.value || 13) + 'pt');
+    root.style.setProperty('--fn-header-r', EngineInputs.el('f-hdr-r')?.value || 'serif');
+    root.style.setProperty('--sz-header-r', (EngineInputs.el('s-hdr-r')?.value || 13) + 'pt');
+    root.style.setProperty('--fn-header-c', EngineInputs.el('f-hdr-c')?.value || 'serif');
+    root.style.setProperty('--sz-header-c', (EngineInputs.el('s-hdr-c')?.value || 11) + 'pt');
+    root.style.setProperty('--fn-header-l', EngineInputs.el('f-hdr-l')?.value || 'serif');
+    root.style.setProperty('--sz-header-l', (EngineInputs.el('s-hdr-l')?.value || 13) + 'pt');
 
     // קו מפריד בין הכותרת העליונה לגוף הטקסט
-    const hdrDividerMode = document.getElementById('hdr-divider-style')?.value || 'gray';
+    const hdrDividerMode = EngineInputs.el('hdr-divider-style')?.value || 'gray';
     const hdrDividerColorMap = { none: 'transparent', gray: 'rgba(0,0,0,0.06)', black: '#000' };
     root.style.setProperty('--hdr-divider-color', hdrDividerColorMap[hdrDividerMode] || hdrDividerColorMap.gray);
 
     // כותרות 0 עד 7
-    root.style.setProperty('--fn-h0', document.getElementById('f-h0')?.value || 'serif');
-    root.style.setProperty('--sz-h0', (document.getElementById('s-h0')?.value || 26) + 'pt');
-    root.style.setProperty('--fn-h0-body', document.getElementById('f-h0-body')?.value || 'serif');
-    root.style.setProperty('--sz-h0-body', (document.getElementById('s-h0-body')?.value || 11.5) + 'pt');
+    root.style.setProperty('--fn-h0', EngineInputs.el('f-h0')?.value || 'serif');
+    root.style.setProperty('--sz-h0', (EngineInputs.el('s-h0')?.value || 26) + 'pt');
+    root.style.setProperty('--fn-h0-body', EngineInputs.el('f-h0-body')?.value || 'serif');
+    root.style.setProperty('--sz-h0-body', (EngineInputs.el('s-h0-body')?.value || 11.5) + 'pt');
 
-    root.style.setProperty('--fn-h1', document.getElementById('f-h1')?.value || 'serif');
-    root.style.setProperty('--sz-h1', (document.getElementById('s-h1')?.value || 50) + 'pt');
+    root.style.setProperty('--fn-h1', EngineInputs.el('f-h1')?.value || 'serif');
+    root.style.setProperty('--sz-h1', (EngineInputs.el('s-h1')?.value || 50) + 'pt');
     
-    root.style.setProperty('--fn-h2', document.getElementById('f-h2')?.value || 'serif');
-    root.style.setProperty('--sz-h2', (document.getElementById('s-h2')?.value || 17) + 'pt');
-    root.style.setProperty('--h2-top-distance', document.getElementById('h2-top-distance')?.value || '22%');
+    root.style.setProperty('--fn-h2', EngineInputs.el('f-h2')?.value || 'serif');
+    root.style.setProperty('--sz-h2', (EngineInputs.el('s-h2')?.value || 17) + 'pt');
+    root.style.setProperty('--h2-top-distance', EngineInputs.el('h2-top-distance')?.value || '22%');
 
-    const fSiman = document.getElementById('f-siman')?.value;
-    const sSiman = document.getElementById('s-siman')?.value;
+    const fSiman = EngineInputs.el('f-siman')?.value;
+    const sSiman = EngineInputs.el('s-siman')?.value;
     if (fSiman) root.style.setProperty('--fn-siman', fSiman);
     if (sSiman) root.style.setProperty('--sz-siman', sSiman + 'pt');
 
-    root.style.setProperty('--fn-h3', document.getElementById('f-h3')?.value || 'serif');
-    root.style.setProperty('--sz-h3', (document.getElementById('s-h3')?.value || 13.5) + 'pt');
-    root.style.setProperty('--fn-h4', document.getElementById('f-h4')?.value || 'serif');
-    root.style.setProperty('--sz-h4', (document.getElementById('s-h4')?.value || 12.5) + 'pt');
-    root.style.setProperty('--fn-h5', document.getElementById('f-h5')?.value || 'serif');
-    root.style.setProperty('--sz-h5', (document.getElementById('s-h5')?.value || 11.5) + 'pt');
-    root.style.setProperty('--fn-h6', document.getElementById('f-h6')?.value || 'serif');
-    root.style.setProperty('--sz-h6', (document.getElementById('s-h6')?.value || 10.5) + 'pt');
-    root.style.setProperty('--fn-h7', document.getElementById('f-h7')?.value || 'serif');
-    root.style.setProperty('--sz-h7', (document.getElementById('s-h7')?.value || 6) + 'pt');
+    root.style.setProperty('--fn-h3', EngineInputs.el('f-h3')?.value || 'serif');
+    root.style.setProperty('--sz-h3', (EngineInputs.el('s-h3')?.value || 13.5) + 'pt');
+    root.style.setProperty('--fn-h4', EngineInputs.el('f-h4')?.value || 'serif');
+    root.style.setProperty('--sz-h4', (EngineInputs.el('s-h4')?.value || 12.5) + 'pt');
+    root.style.setProperty('--fn-h5', EngineInputs.el('f-h5')?.value || 'serif');
+    root.style.setProperty('--sz-h5', (EngineInputs.el('s-h5')?.value || 11.5) + 'pt');
+    root.style.setProperty('--fn-h6', EngineInputs.el('f-h6')?.value || 'serif');
+    root.style.setProperty('--sz-h6', (EngineInputs.el('s-h6')?.value || 10.5) + 'pt');
+    root.style.setProperty('--fn-h7', EngineInputs.el('f-h7')?.value || 'serif');
+    root.style.setProperty('--sz-h7', (EngineInputs.el('s-h7')?.value || 6) + 'pt');
 
     // שערים (פונקציה נפרדת - מתעדכנת גם בעדכון חי של שער, בלי לגעת במשתני העימוד האחרים)
     updateCoverStyles();
 
     // גוף הטקסט, מילה ראשונה וריווח שורות
-    root.style.setProperty('--fn-body', document.getElementById('font-body')?.value || 'serif');
-    root.style.setProperty('--sz-body', (document.getElementById('size-body')?.value || 11.2) + 'pt');
-    root.style.setProperty('--line-height-body', document.getElementById('line-height-body')?.value || '1.34');
-    root.style.setProperty('--fn-first-word', document.getElementById('font-first-word')?.value || 'serif');
-    root.style.setProperty('--sz-first-word', (document.getElementById('size-first-word')?.value || 1.5) + 'em');
+    root.style.setProperty('--fn-body', EngineInputs.el('font-body')?.value || 'serif');
+    root.style.setProperty('--sz-body', (EngineInputs.el('size-body')?.value || 11.2) + 'pt');
+    root.style.setProperty('--line-height-body', EngineInputs.el('line-height-body')?.value || '1.34');
+    root.style.setProperty('--fn-first-word', EngineInputs.el('font-first-word')?.value || 'serif');
+    root.style.setProperty('--sz-first-word', (EngineInputs.el('size-first-word')?.value || 1.5) + 'em');
 
     // דיבור המתחיל
-    const fDh = document.getElementById('f-dh')?.value;
+    const fDh = EngineInputs.el('f-dh')?.value;
     if (fDh) root.style.setProperty('--fn-dh', fDh);
 
     // כותרת הערות שוליים
-    const fNoteTitle = document.getElementById('f-note-title')?.value;
-    const sNoteTitle = document.getElementById('s-note-title')?.value;
+    const fNoteTitle = EngineInputs.el('f-note-title')?.value;
+    const sNoteTitle = EngineInputs.el('s-note-title')?.value;
     if (fNoteTitle) root.style.setProperty('--fn-note-title', fNoteTitle);
     if (sNoteTitle) root.style.setProperty('--sz-note-title', (sNoteTitle || 9) + 'pt');
 }
@@ -200,7 +200,7 @@ function updateStyles() {
 const RUN_IN_START_RE = /^\s*<span class="heading-run-in/;
 
 function applyDibburHamatchil(text) {
-    const isDhEnabled = document.getElementById('auto-dh')?.checked;
+    const isDhEnabled = EngineInputs.el('auto-dh')?.checked;
     if (!isDhEnabled || !text) return text;
     if (RUN_IN_START_RE.test(text)) return text;
 
@@ -344,13 +344,13 @@ function createDropWord(text, isContinuation, isSingleLine, numLines = 2, inside
         return applyDibburHamatchil(text);
     }
 
-    const mode = document.getElementById('drop-word-mode')?.value || 'window';
+    const mode = EngineInputs.el('drop-word-mode')?.value || 'window';
     if (mode === 'none') {
         return applyDibburHamatchil(text);
     }
 
-    const wordCount = parseInt(document.getElementById('drop-word-count')?.value, 10) || 1;
-    const minLines = parseInt(document.getElementById('drop-word-min-lines')?.value, 10) || 2;
+    const wordCount = parseInt(EngineInputs.el('drop-word-count')?.value, 10) || 1;
+    const minLines = parseInt(EngineInputs.el('drop-word-min-lines')?.value, 10) || 2;
     const meetsLineThreshold = (numLines >= minLines) && !isSingleLine;
 
     // פיצול למספר מילים ראשונות מבוקש (הערת שוליים אינה נחתכת באמצע)
@@ -477,11 +477,11 @@ function getLinesFromParagraph(text, colWidth, styleObj, useWindowIfMultipleLine
     const oneLineH = pMeasure.offsetHeight;
     const numLinesEstimated = Math.max(1, Math.round(singleLineHeight / oneLineH));
     
-    const minLines = parseInt(document.getElementById('drop-word-min-lines')?.value, 10) || 2;
-    const mode = document.getElementById('drop-word-mode')?.value || 'window';
+    const minLines = parseInt(EngineInputs.el('drop-word-min-lines')?.value, 10) || 2;
+    const mode = EngineInputs.el('drop-word-mode')?.value || 'window';
     const shouldApplyWindow = useWindowIfMultipleLines && (numLinesEstimated >= minLines) && (mode === 'window') && !RUN_IN_START_RE.test(text);
 
-    const wordCount = parseInt(document.getElementById('drop-word-count')?.value, 10) || 1;
+    const wordCount = parseInt(EngineInputs.el('drop-word-count')?.value, 10) || 1;
     const dropWords = words.slice(0, Math.min(wordCount, words.length)).join(' ');
     const dropHtml = units.slice(0, Math.min(wordCount, words.length)).map(u => u.html).join(' ');
 
@@ -564,22 +564,22 @@ function buildHeaderGridHTML(pNum, h1Title, h2Title, h3Title, bookTitle, customR
     const isEven = (pNum % 2 === 0);
     // טוגל "פצל שם ספר": קובע בעצמו את תוכן הכותרת הימנית (חצי ראשון של שם הספר) והשמאלית (חצי שני),
     // בלי לבחור ידנית בכל כותרת, ומבטל את ההחלפה בין עמודים (כותרות מתחלפות) - שתי האפשרויות סותרות.
-    const isSplitTitle = !!document.getElementById('hdr-title-split')?.checked;
-    const isAlternating = !isSplitTitle && document.getElementById('hdr-alternating')?.checked;
+    const isSplitTitle = !!EngineInputs.el('hdr-title-split')?.checked;
+    const isAlternating = !isSplitTitle && EngineInputs.el('hdr-alternating')?.checked;
 
-    let hdrRType = document.getElementById('hdr-r-type')?.value || 'h1';
-    let hdrCType = document.getElementById('hdr-c-type')?.value || 'spear';
-    let hdrLType = document.getElementById('hdr-l-type')?.value || 'h2';
+    let hdrRType = EngineInputs.el('hdr-r-type')?.value || 'h1';
+    let hdrCType = EngineInputs.el('hdr-c-type')?.value || 'spear';
+    let hdrLType = EngineInputs.el('hdr-l-type')?.value || 'h2';
     if (isSplitTitle) { hdrRType = 'book_title_split_r'; hdrLType = 'book_title_split_l'; }
 
-    let hdrRAlign = document.getElementById('hdr-r-align')?.value || 'right';
-    let hdrCAlign = document.getElementById('hdr-c-align')?.value || 'center';
-    let hdrLAlign = document.getElementById('hdr-l-align')?.value || 'left';
+    let hdrRAlign = EngineInputs.el('hdr-r-align')?.value || 'right';
+    let hdrCAlign = EngineInputs.el('hdr-c-align')?.value || 'center';
+    let hdrLAlign = EngineInputs.el('hdr-l-align')?.value || 'left';
 
-    let hdrRFont = document.getElementById('f-hdr-r')?.value || "'Livorna','David Libre',serif";
-    let hdrRSize = (document.getElementById('s-hdr-r')?.value || 13) + 'pt';
-    let hdrLFont = document.getElementById('f-hdr-l')?.value || "'Livorna','David Libre',serif";
-    let hdrLSize = (document.getElementById('s-hdr-l')?.value || 13) + 'pt';
+    let hdrRFont = EngineInputs.el('f-hdr-r')?.value || "'Livorna','David Libre',serif";
+    let hdrRSize = (EngineInputs.el('s-hdr-r')?.value || 13) + 'pt';
+    let hdrLFont = EngineInputs.el('f-hdr-l')?.value || "'Livorna','David Libre',serif";
+    let hdrLSize = (EngineInputs.el('s-hdr-l')?.value || 13) + 'pt';
 
     let cR = customR, cL = customL;
 
@@ -666,43 +666,43 @@ function parseMetadataFromText(rawText) {
         let match = false;
 
         if (/^(?:שם הספר[:\s]*)?שם הספר\s*[-–—:]\s*(.*)$/i.test(trimmed)) {
-            const el = document.getElementById('inp-book-title');
+            const el = EngineInputs.derived('inp-book-title');
             if (el) el.value = trimmed.replace(/^(?:שם הספר[:\s]*)?שם הספר\s*[-–—:]\s*/i, '').trim();
             match = true;
         } else if (/^(?:נושא(?:\\|\/)כותרת משנה[:\s]*)?נושא\s*[-–—:]\s*(.*)$/i.test(trimmed)) {
-            const el = document.getElementById('inp-book-subtitle');
+            const el = EngineInputs.derived('inp-book-subtitle');
             if (el) el.value = trimmed.replace(/^(?:נושא(?:\\|\/)כותרת משנה[:\s]*)?נושא\s*[-–—:]\s*/i, '').trim();
             match = true;
         } else if (/^(?:נושא מפורט\s*(?:\\|\/)\s*תיאור[:\s]*)?נושא מפורט\s*[-–—:]\s*(.*)$/i.test(trimmed)) {
-            const el = document.getElementById('inp-book-desc');
+            const el = EngineInputs.derived('inp-book-desc');
             if (el) el.value = trimmed.replace(/^(?:נושא מפורט\s*(?:\\|\/)\s*תיאור[:\s]*)?נושא מפורט\s*[-–—:]\s*/i, '').trim();
             match = true;
         } else if (/^(?:פרטי מהדורא\s*(?:\\|\/)\s*חלקים[:\s]*)?פרטי מהדורא\s*[-–—:]\s*(.*)$/i.test(trimmed)) {
-            const el = document.getElementById('inp-book-sections');
+            const el = EngineInputs.derived('inp-book-sections');
             if (el) el.value = trimmed.replace(/^(?:פרטי מהדורא\s*(?:\\|\/)\s*חלקים[:\s]*)?פרטי מהדורא\s*[-–—:]\s*/i, '').trim();
             match = true;
         } else if (/^(?:שם המחבר[:\s]*)?שם המחבר\s*[-–—:]\s*(.*)$/i.test(trimmed)) {
-            const el = document.getElementById('inp-book-author');
+            const el = EngineInputs.derived('inp-book-author');
             if (el) el.value = trimmed.replace(/^(?:שם המחבר[:\s]*)?שם המחבר\s*[-–—:]\s*/i, '').trim();
             match = true;
         } else if (/^(?:שמירת זכויות[:\s]*)?שמירת זכויות\s*[-–—:]\s*(.*)$/i.test(trimmed)) {
-            const el = document.getElementById('inp-book-back-copyright');
+            const el = EngineInputs.derived('inp-book-back-copyright');
             if (el) el.value = trimmed.replace(/^(?:שמירת זכויות[:\s]*)?שמירת זכויות\s*[-–—:]\s*/i, '').trim();
             match = true;
         } else if (/^(?:פרטי הוצאה לאור[:\s]*)?פרטי הוצאה לאור\s*[-–—:]\s*(.*)$/i.test(trimmed)) {
-            const el = document.getElementById('inp-book-back-publishing');
+            const el = EngineInputs.derived('inp-book-back-publishing');
             if (el) el.value = trimmed.replace(/^(?:פרטי הוצאה לאור[:\s]*)?פרטי הוצאה לאור\s*[-–—:]\s*/i, '').trim();
             match = true;
         } else if (/^(?:פרטי קשר[:\s]*)?פרטי קשר\s*[-–—:]\s*(.*)$/i.test(trimmed)) {
-            const el = document.getElementById('inp-book-back-contact');
+            const el = EngineInputs.derived('inp-book-back-contact');
             if (el) el.value = trimmed.replace(/^(?:פרטי קשר[:\s]*)?פרטי קשר\s*[-–—:]\s*/i, '').trim();
             match = true;
         } else if (/^(?:פרטים נוספים[:\s]*)?פרטים נוספים\s*[-–—:]\s*(.*)$/i.test(trimmed)) {
-            const el = document.getElementById('inp-book-back-extra');
+            const el = EngineInputs.derived('inp-book-back-extra');
             if (el) el.value = trimmed.replace(/^(?:פרטים נוספים[:\s]*)?פרטים נוספים\s*[-–—:]\s*/i, '').trim();
             match = true;
         } else if (/^(?:מקום ושנת הוצאה[:\s]*)?מקום ושנת הוצאה\s*[-–—:]\s*(.*)$/i.test(trimmed)) {
-            const el = document.getElementById('inp-book-year');
+            const el = EngineInputs.derived('inp-book-year');
             if (el) el.value = trimmed.replace(/^(?:מקום ושנת הוצאה[:\s]*)?מקום ושנת הוצאה\s*[-–—:]\s*/i, '').trim();
             match = true;
         }
@@ -761,8 +761,8 @@ function estimateSectionFillRatio(tokens) {
    - כותרת (רמות 2-6) לעולם לא נשארת לבדה בתחתית טור: היא עוברת יחד עם הפסקה שאחריה.
    ========================================================================== */
 function getSplitRules() {
-    const avoidWidows = document.getElementById('avoid-widows')?.checked ?? true;   // שורה בודדת בסוף טור/עמוד
-    const avoidOrphans = document.getElementById('avoid-orphans')?.checked ?? true; // שורה בודדת בראש טור/עמוד
+    const avoidWidows = EngineInputs.el('avoid-widows')?.checked ?? true;   // שורה בודדת בסוף טור/עמוד
+    const avoidOrphans = EngineInputs.el('avoid-orphans')?.checked ?? true; // שורה בודדת בראש טור/עמוד
     return { minFirst: avoidWidows ? 2 : 1, minLast: avoidOrphans ? 2 : 1 };
 }
 
@@ -1662,8 +1662,8 @@ function finalizeNotePositions(notesList, columnBoundaryHeight) {
    ========================================================================== */
 function findDelimiterMatches(text, hostContextKey) {
     const activeStyles = [];
-    const fnOpen = document.getElementById('fn-delim-open')?.value?.trim();
-    const fnClose = document.getElementById('fn-delim-close')?.value?.trim();
+    const fnOpen = EngineInputs.el('fn-delim-open')?.value?.trim();
+    const fnClose = EngineInputs.el('fn-delim-close')?.value?.trim();
     if (fnOpen && fnClose) {
         activeStyles.push({
             def: {
@@ -1905,9 +1905,9 @@ function mergeMatches(list1, list2) {
    hostSizePt = גודל הטקסט המארח (כותרת/גוף/הערת שוליים) — חשוב ליחסיות.
    נקודה חשובה: הסגנון מוחל גם ב-dry-run כדי שהמדידה תהיה מדויקת. */
 function applyParenStyle(node, hostSizePt) {
-    const fontVal = document.getElementById('f-paren')?.value?.trim() || '';
-    const mode = document.getElementById('s-paren-mode')?.value || 'relative';
-    const sVal = parseFloat(document.getElementById('s-paren')?.value);
+    const fontVal = EngineInputs.el('f-paren')?.value?.trim() || '';
+    const mode = EngineInputs.el('s-paren-mode')?.value || 'relative';
+    const sVal = parseFloat(EngineInputs.el('s-paren')?.value);
     const effHost = hostSizePt || 12;
     let sizePt;
     if (mode === 'fixed') {
@@ -1926,12 +1926,12 @@ function getHostSizePt(level, customStyleId) {
         if (inst && inst.def.style && typeof inst.def.style.size === 'number') return inst.def.style.size;
         return 12;
     }
-    const el = document.getElementById('s-h' + level);
+    const el = EngineInputs.el('s-h' + level);
     return el ? parseFloat(el.value) : 12;
 }
 
 function getBodySizePt() {
-    const el = document.getElementById('size-body');
+    const el = EngineInputs.el('size-body');
     return el ? parseFloat(el.value) : 12;
 }
 
@@ -1945,7 +1945,7 @@ function getNoteConfig(styleId) {
    ========================================================================== */
 function formatNoteMarker(n, styleId) {
     const cfg = getNoteConfig(styleId);
-    const globalNumStyle = document.getElementById('note-numbering-style')?.value || 'gematria';
+    const globalNumStyle = EngineInputs.el('note-numbering-style')?.value || 'gematria';
     const numStyle = cfg.numberingStyle || globalNumStyle;
 
     if (numStyle === 'decimal') return String(n);
@@ -1956,7 +1956,7 @@ function formatNoteMarker(n, styleId) {
 }
 
 function resetNoteCounterIfNeeded(target, trigger) {
-    const globalResetMode = document.getElementById('fn-reset-mode')?.value || 'page';
+    const globalResetMode = EngineInputs.el('fn-reset-mode')?.value || 'page';
     let shouldReset = false;
 
     if (globalResetMode === 'continuous') {
@@ -1982,8 +1982,8 @@ function resetNoteCounterIfNeeded(target, trigger) {
 }
 
 function applyNoteMarkerStyle(el, isBacklink) {
-    const typeEl = document.getElementById('note-marker-type');
-    const sizeEl = isBacklink ? document.getElementById('note-listing-num-size') : document.getElementById('note-marker-size');
+    const typeEl = EngineInputs.el('note-marker-type');
+    const sizeEl = isBacklink ? EngineInputs.el('note-listing-num-size') : EngineInputs.el('note-marker-size');
     const type = (!isBacklink && typeEl) ? typeEl.value : 'normal';
     const size = sizeEl ? parseFloat(sizeEl.value) : 8;
     el.style.fontSize = size + 'pt';
@@ -1993,7 +1993,7 @@ function applyNoteMarkerStyle(el, isBacklink) {
     el.style.cursor = 'pointer';
     // [חדש] סוג הגופן של סימון הערת השוליים בגוף הטקסט = כמו גופן הערת השוליים (f-note-body),
     // לא כמו גוף הטקסט. הגודל נשאר כפי שהיה (note-marker-size / note-listing-num-size).
-    const noteFontEl = document.getElementById('f-note-body');
+    const noteFontEl = EngineInputs.el('f-note-body');
     if (noteFontEl && noteFontEl.value) {
         el.style.fontFamily = noteFontEl.value;
     }
@@ -2047,14 +2047,14 @@ function createNoteMarkerAndQueue(text, styleId, target) {
 
 function buildNoteBlockElement(queue, columns) {
     const wrap = document.createElement('div');
-    const cols = columns || parseInt(document.getElementById('fn-columns')?.value, 10) || 1;
+    const cols = columns || parseInt(EngineInputs.el('fn-columns')?.value, 10) || 1;
     wrap.className = `note-block cols-${cols}`;
 
     // [חדש] מצב פריסת הערות: "block" (ברירת מחדל — כל הערה בשורה נפרדת) או "continuous" (רצף הערות עם רווח כפול ביניהן)
-    const layoutMode = document.getElementById('fn-layout-mode')?.value || 'block';
+    const layoutMode = EngineInputs.el('fn-layout-mode')?.value || 'block';
     if (layoutMode === 'continuous') wrap.classList.add('continuous-mode');
 
-    const sepEl = document.getElementById('note-num-separator');
+    const sepEl = EngineInputs.el('note-num-separator');
     const globalSep = sepEl ? sepEl.value : '.';
 
     queue.forEach((item, idx) => {
@@ -2070,7 +2070,7 @@ function buildNoteBlockElement(queue, columns) {
         // [תיקון] במקום לשים את הטקסט כ-textContent, עבור אותו דרך applyDelimiterStyles
         // כדי לתפוס סוגריים ( ) ותוחמים אחרים בתוך הערת השוליים.
         // גודל המארח = גודל גוף ההערה (מתוך s-note-body או ברירת מחדל 9pt).
-        const noteBodySize = parseFloat(document.getElementById('s-note-body')?.value) || 9;
+        const noteBodySize = parseFloat(EngineInputs.el('s-note-body')?.value) || 9;
         body.textContent = item.text;  // נשים זמנית, ואז נעבד
         const inst = (typeof findExtTextStyle === 'function') ? findExtTextStyle(item.styleId) : null;
         if (inst && inst.def.style) applyExtStyleToNode(body, inst.def.style, 10);
@@ -2125,20 +2125,20 @@ function markLastRowOfContinuousBlock(block) {
    משמש גם להצבה בפועל בעמוד וגם למדידה מדויקת של השטח שהוא תופס. */
 function buildFootnoteAreaElement(queue) {
     const cfg0 = getNoteConfig(queue[0].styleId);
-    const colCount = parseInt(document.getElementById('fn-columns')?.value, 10) || cfg0.columns || 1;
+    const colCount = parseInt(EngineInputs.el('fn-columns')?.value, 10) || cfg0.columns || 1;
     const rule = buildNoteRuleElement();
     const block = buildNoteBlockElement(queue, colCount);
     const area = document.createElement('div');
     area.className = 'footnote-area';
 
     // כותרת מעל הערות שוליים ועיטורי צד (אם מוגדר)
-    const titleText = document.getElementById('fn-title-text')?.value?.trim();
+    const titleText = EngineInputs.el('fn-title-text')?.value?.trim();
     if (titleText) {
         const titleWrap = document.createElement('div');
         titleWrap.className = 'footnote-header-wrap';
 
-        const ornR = document.getElementById('note-header-orn-r')?.value;
-        const ornL = document.getElementById('note-header-orn-l')?.value;
+        const ornR = EngineInputs.el('note-header-orn-r')?.value;
+        const ornL = EngineInputs.el('note-header-orn-l')?.value;
 
         if (ornR && ornR !== 'none' && typeof renderSideOrnamentHTML === 'function') {
             const rElem = document.createElement('span');
@@ -2214,10 +2214,10 @@ function measureFootnoteAreaHeight(queue, opts) {
     // חישוב גורמי הקשר CSS למפתח המטמון
     const probeHost = __findProbeHost();
     const probeWidth = probeHost ? probeHost.clientWidth : 0;
-    const fnColumns = parseInt(document.getElementById('fn-columns')?.value, 10) || 1;
-    const noteBodySize = parseFloat(document.getElementById('s-note-body')?.value) || 8.5;
+    const fnColumns = parseInt(EngineInputs.el('fn-columns')?.value, 10) || 1;
+    const noteBodySize = parseFloat(EngineInputs.el('s-note-body')?.value) || 8.5;
     const noteLineHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--lh-note-body') || '1.45') || 1.45;
-    const layoutMode = document.getElementById('fn-layout-mode')?.value || 'block';
+    const layoutMode = EngineInputs.el('fn-layout-mode')?.value || 'block';
 
     // מפתח מטמון מורחב: כולל הקשר CSS
     const itemsKey = queue.map(i => i.uid + ':' + i.number + ':' + (i.text || '').length + ':' + (i.styleId || '')).join('|');
@@ -2567,13 +2567,13 @@ function renderPaginatedTOC(container, entries, titleText, bookTitle, h1Title, p
 
     // הכותרת העליונה נבנית לכל עמוד בנפרד (buildHeaderGridHTML), כדי שגם בתוכן העניינים יחולו כותרות מתחלפות,
     // פיצול שם ספר, חיתוך טקסט ארוך ומספר עמוד - בדיוק כמו בעמודי התוכן.
-    const customR = document.getElementById('hdr-r-custom')?.value || '';
-    const customC = document.getElementById('hdr-c-custom')?.value || '';
-    const customL = document.getElementById('hdr-l-custom')?.value || '';
+    const customR = EngineInputs.el('hdr-r-custom')?.value || '';
+    const customC = EngineInputs.el('hdr-c-custom')?.value || '';
+    const customL = EngineInputs.el('hdr-l-custom')?.value || '';
 
     function getTocStyle(level) {
-        const f = document.getElementById(`f-${tocPrefix}-${level}`);
-        const s = document.getElementById(`s-${tocPrefix}-${level}`);
+        const f = EngineInputs.el(`f-${tocPrefix}-${level}`);
+        const s = EngineInputs.el(`s-${tocPrefix}-${level}`);
         if (f && s) return `font-family: ${f.value}; font-size: ${s.value}pt;`;
         return '';
     }
@@ -2850,7 +2850,7 @@ function refreshCoversInPlace() {
     const container = document.getElementById('book-container');
     if (!container) return false;
     updateCoverStyles();
-    const themeId = document.getElementById('active-theme-select')?.value || 'builtin_1';
+    const themeId = EngineInputs.el('active-theme-select')?.value || 'builtin_1';
     let found = 0;
     const swap = (oldPage, build) => {
         const tmp = document.createElement('div');
@@ -2947,9 +2947,11 @@ function typesetDocumentNow() {
         host.style.transition = 'none';
         host.style.transform = 'none';
     }
+    if (window.EngineInputs) EngineInputs.beginRun();   // [V22/שלב 2] צילום הגדרות אחד לכל העימוד
     try {
         return typesetDocumentCore();
     } finally {
+        if (window.EngineInputs) EngineInputs.endRun();
         if (host) {
             host.style.transform = prevTransform;
             host.offsetWidth; // כופה חישוב-סגנון לפני החזרת האנימציה, כדי שלא תתרחש אנימציית זום מיותרת
@@ -3000,28 +3002,28 @@ function typesetDocumentCore() {
     rawText = stripEditorialNotes(rawText);
     rawText = parseMetadataFromText(rawText);
     // ביטול רווחים לפני סוגר פותח של הערה כדי להדביק אותה למילה שלפניה (מונע שבירת שורה ויתמות)
-    const fnOpen = document.getElementById('fn-delim-open')?.value?.trim() || '[';
+    const fnOpen = EngineInputs.el('fn-delim-open')?.value?.trim() || '[';
     if (fnOpen) {
         const escO = fnOpen.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
         rawText = rawText.replace(new RegExp('\\s+(' + escO + ')', 'g'), '$1');
     }
-    const autoSimanH2 = document.getElementById('h2-auto-siman')?.checked ?? false;
-    const resetSimanOnH1 = document.getElementById('h2-reset-siman')?.checked ?? true;
+    const autoSimanH2 = EngineInputs.el('h2-auto-siman')?.checked ?? false;
+    const resetSimanOnH1 = EngineInputs.el('h2-reset-siman')?.checked ?? true;
     let simanCounter = 0;
 
-    const h2OrnTopStyle = document.getElementById('h2-ornament-top-style')?.value || 'none';
-    const h2OrnBtmStyle = document.getElementById('h2-ornament-bottom-style')?.value || 'none';
-    const h2OrnScope = document.getElementById('h2-orn-scope')?.value || 'both';
-    const h3OrnR = document.getElementById('h3-ornament-r')?.value || 'none';
-    const h3OrnL = document.getElementById('h3-ornament-l')?.value || 'none';
-    const colDividerStyle = document.getElementById('col-divider-style')?.value || 'none';
-    const showSubShaar = document.getElementById('show-sub-shaar')?.checked ?? true;
+    const h2OrnTopStyle = EngineInputs.el('h2-ornament-top-style')?.value || 'none';
+    const h2OrnBtmStyle = EngineInputs.el('h2-ornament-bottom-style')?.value || 'none';
+    const h2OrnScope = EngineInputs.el('h2-orn-scope')?.value || 'both';
+    const h3OrnR = EngineInputs.el('h3-ornament-r')?.value || 'none';
+    const h3OrnL = EngineInputs.el('h3-ornament-l')?.value || 'none';
+    const colDividerStyle = EngineInputs.el('col-divider-style')?.value || 'none';
+    const showSubShaar = EngineInputs.el('show-sub-shaar')?.checked ?? true;
 
     const container = document.getElementById('book-container');
     if (!container) return;
     container.innerHTML = '';
 
-    const enLinePrefix = document.getElementById('en-line-prefix')?.value?.trim() || 'הערת סיום -';
+    const enLinePrefix = EngineInputs.el('en-line-prefix')?.value?.trim() || 'הערת סיום -';
 
     const lines = rawText.split('\n');
     const tokens = [];
@@ -3050,7 +3052,7 @@ function typesetDocumentCore() {
         if (hMatch) {
             const lvl = parseInt(hMatch[1], 10);
             const txt = hMatch[2].trim();
-            const hModeSel = document.getElementById('mode-h' + lvl)?.value;
+            const hModeSel = EngineInputs.el('mode-h' + lvl)?.value;
             if (lvl === 7 && hModeSel !== 'inline_2col') {
                 // כותרת 7 היא הערת צד, אלא אם נבחר "רציף ב-2 טורים" - אז היא כותרת רגילה בתוך הטור
                 pendingSideNote = txt;
@@ -3064,7 +3066,7 @@ function typesetDocumentCore() {
                 pendingSideNoteLevel = lvl;
                 lineToTokenMap[lineIdx] = null;
             } else {
-                const hMode = document.getElementById('mode-h' + lvl)?.value;
+                const hMode = EngineInputs.el('mode-h' + lvl)?.value;
                 if (hMode === 'run_in') {
                     pendingRunInHeading = { level: lvl, text: txt, lineIdx: lineIdx };
                     lineToTokenMap[lineIdx] = null;
@@ -3152,14 +3154,14 @@ function typesetDocumentCore() {
     }
 
     const headingModes = {
-        0: document.getElementById('mode-h0')?.value || 'new_page_1col',
-        1: document.getElementById('mode-h1')?.value || 'sub_shaar',
-        2: document.getElementById('mode-h2')?.value || 'new_page_1col',
-        3: document.getElementById('mode-h3')?.value || 'span_1col',
-        4: document.getElementById('mode-h4')?.value || 'inline_2col',
-        5: document.getElementById('mode-h5')?.value || 'inline_2col',
-        6: document.getElementById('mode-h6')?.value || 'inline_2col',
-        7: document.getElementById('mode-h7')?.value || 'side_note'
+        0: EngineInputs.el('mode-h0')?.value || 'new_page_1col',
+        1: EngineInputs.el('mode-h1')?.value || 'sub_shaar',
+        2: EngineInputs.el('mode-h2')?.value || 'new_page_1col',
+        3: EngineInputs.el('mode-h3')?.value || 'span_1col',
+        4: EngineInputs.el('mode-h4')?.value || 'inline_2col',
+        5: EngineInputs.el('mode-h5')?.value || 'inline_2col',
+        6: EngineInputs.el('mode-h6')?.value || 'inline_2col',
+        7: EngineInputs.el('mode-h7')?.value || 'side_note'
     };
     if (typeof importedTextStyles !== 'undefined') {
         importedTextStyles.forEach(inst => {
@@ -3168,9 +3170,9 @@ function typesetDocumentCore() {
     }
 
     const oddPageRequired = {
-        0: document.getElementById('odd-h0')?.checked ?? false,
-        1: document.getElementById('odd-h1')?.checked ?? false,
-        2: document.getElementById('odd-h2')?.checked ?? false
+        0: EngineInputs.el('odd-h0')?.checked ?? false,
+        1: EngineInputs.el('odd-h1')?.checked ?? false,
+        2: EngineInputs.el('odd-h2')?.checked ?? false
     };
     if (typeof importedTextStyles !== 'undefined') {
         importedTextStyles.forEach(inst => {
@@ -3230,8 +3232,8 @@ function typesetDocumentCore() {
     // במקום זאת, הערכים מועברים דרך hidden inputs: gtoc-shows, gtoc-groups (מופרדים בפסיקים).
     // אם אין checkboxים (iframe), קרא מה-hidden inputs.
     if (gtocShows.length === 0) {
-        const showsVal = document.getElementById('gtoc-shows')?.value;
-        const groupsVal = document.getElementById('gtoc-groups')?.value;
+        const showsVal = EngineInputs.el('gtoc-shows')?.value;
+        const groupsVal = EngineInputs.el('gtoc-groups')?.value;
         if (showsVal) showsVal.split(',').forEach(v => { if (v) gtocShows.push(parseInt(v, 10)); });
         if (groupsVal) groupsVal.split(',').forEach(v => { if (v) gtocGroups.push(parseInt(v, 10)); });
     }
@@ -3251,22 +3253,22 @@ function typesetDocumentCore() {
     let currentH3Title = '';
     let currentH4Title = '';
 
-    const bookTitle = document.getElementById('inp-book-title')?.value || "ספר";
-    const showMainShaar = document.getElementById('show-main-shaar')?.checked ?? true;
-    const showBackShaar = document.getElementById('show-back-shaar')?.checked ?? false;
-    const activeThemeId = document.getElementById('active-theme-select')?.value || 'builtin_1';
-    const secDivStyle = document.getElementById('section-divider-style')?.value || 'spear';
-    const enableGeneralTOC = document.getElementById('enable-general-toc')?.checked ?? true;
-    const enableDetailedTOC = document.getElementById('enable-detailed-toc')?.checked ?? true;
+    const bookTitle = EngineInputs.derived('inp-book-title')?.value || "ספר";
+    const showMainShaar = EngineInputs.el('show-main-shaar')?.checked ?? true;
+    const showBackShaar = EngineInputs.el('show-back-shaar')?.checked ?? false;
+    const activeThemeId = EngineInputs.el('active-theme-select')?.value || 'builtin_1';
+    const secDivStyle = EngineInputs.el('section-divider-style')?.value || 'spear';
+    const enableGeneralTOC = EngineInputs.el('enable-general-toc')?.checked ?? true;
+    const enableDetailedTOC = EngineInputs.el('enable-detailed-toc')?.checked ?? true;
 
-    const customR = document.getElementById('hdr-r-custom')?.value || '';
-    const customC = document.getElementById('hdr-c-custom')?.value || '';
-    const customL = document.getElementById('hdr-l-custom')?.value || '';
+    const customR = EngineInputs.el('hdr-r-custom')?.value || '';
+    const customC = EngineInputs.el('hdr-c-custom')?.value || '';
+    const customL = EngineInputs.el('hdr-l-custom')?.value || '';
 
     if (showMainShaar) {
         renderExtAnchor(container, 'beforeAll', rawText);
         renderMainShaar(container, activeThemeId, pageIndex);
-        if (document.getElementById('main-shaar-count-numbering')?.checked) pageIndex++;
+        if (EngineInputs.el('main-shaar-count-numbering')?.checked) pageIndex++;
         renderExtAnchor(container, 'afterMainShaar', rawText);
     } else {
         renderExtAnchor(container, 'beforeAll', rawText);
@@ -3274,7 +3276,7 @@ function typesetDocumentCore() {
 
     if (showBackShaar) {
         renderBackShaar(container, activeThemeId, pageIndex);
-        if (document.getElementById('back-shaar-count-numbering')?.checked) pageIndex++;
+        if (EngineInputs.el('back-shaar-count-numbering')?.checked) pageIndex++;
     }
 
     if (enableGeneralTOC) {
@@ -3328,7 +3330,7 @@ function typesetDocumentCore() {
                 subShaarPage.setAttribute('data-first-line-idx', String(sec.token.lineIdx));
             }
             recordPageBreak(pageIndex, sec.token.lineIdx);
-            if (document.getElementById('sub-shaar-count-numbering')?.checked) {
+            if (EngineInputs.el('sub-shaar-count-numbering')?.checked) {
                 pageIndex++;
             }
 
@@ -3351,8 +3353,8 @@ function typesetDocumentCore() {
                 const dtocGroups = Array.from(document.querySelectorAll('.dtoc-grp:checked')).map(cb => parseInt(cb.value, 10));
                 // [תיקון] בארכיטקטורת iframe, קרא מ-hidden inputs אם אין checkboxים
                 if (dtocShows.length === 0) {
-                    const showsVal = document.getElementById('dtoc-shows')?.value;
-                    const groupsVal = document.getElementById('dtoc-groups')?.value;
+                    const showsVal = EngineInputs.el('dtoc-shows')?.value;
+                    const groupsVal = EngineInputs.el('dtoc-groups')?.value;
                     if (showsVal) showsVal.split(',').forEach(v => { if (v) dtocShows.push(parseInt(v, 10)); });
                     if (groupsVal) groupsVal.split(',').forEach(v => { if (v) dtocGroups.push(parseInt(v, 10)); });
                 }
@@ -3508,7 +3510,7 @@ function typesetDocumentCore() {
                     }
 
                     // [חדש] התאמת רוחב העיטורים לרוחב טקסט הכותרת (כשהאפשרות מסומנת)
-                    if (document.getElementById('h2-orn-fit-text')?.checked && (topOrnHTML || btmOrnHTML)) {
+                    if (EngineInputs.el('h2-orn-fit-text')?.checked && (topOrnHTML || btmOrnHTML)) {
                         fitH2OrnamentsToText(pageLayout.bodyFlow, h2OrnScope, simanElem, title);
                     }
                 }
@@ -3946,7 +3948,7 @@ function typesetDocumentCore() {
                     // רק הערך 'fill' ("לא - מילוי עמוד") משאיר את מילוי הטורים כפי שנוצר (ימין מלא ואז שמאל),
                     // ורק כשהבלוק נכנס בגובה הפנוי - אחרת מאזנים כרגיל כדי לא לחרוג מהעמוד.
                     const keepChapterEndUnbalanced =
-                        document.getElementById('balance-chapter-end')?.value === 'fill' &&
+                        EngineInputs.el('balance-chapter-end')?.value === 'fill' &&
                         Math.max(rCol.scrollHeight, lCol.scrollHeight) <= actualAvailH;
                     if (!keepChapterEndUnbalanced) {
                         balanceColumns(block2Col, colWidth, styleObj, blockNoteSnapshot, actualAvailH);
@@ -4088,9 +4090,9 @@ function typesetDocumentCore() {
     // 2) בדיקת יירוס: אם המתיחה הירברה (הטור המתוח נהיה גבוה מהיעד), מכווצים אותו חזרה
     //    במקום למתוח גם את הטור השני. כך שני הטורים נשארים מאוזנים בלי מתיחה כפולה.
     {
-        const styleObj = { fontFamily: document.getElementById('font-body')?.value || 'Frank Ruhl Libre, serif',
-                           fontSize: (parseFloat(document.getElementById('size-body')?.value) || 12) + 'pt',
-                           lineHeight: document.getElementById('line-height-body')?.value || '1.45' };
+        const styleObj = { fontFamily: EngineInputs.el('font-body')?.value || 'Frank Ruhl Libre, serif',
+                           fontSize: (parseFloat(EngineInputs.el('size-body')?.value) || 12) + 'pt',
+                           lineHeight: EngineInputs.el('line-height-body')?.value || '1.45' };
         const allBlocks = container.querySelectorAll('.block-2col');
         allBlocks.forEach(blk => {
             const rC = blk.querySelector('.right-col');

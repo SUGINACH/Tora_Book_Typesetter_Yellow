@@ -123,7 +123,7 @@ function renderHeaderSectionHTML(type, customText, h1Title, h2Title, h3Title, bo
     if (HEADER_ORNAMENTS[type]) return HEADER_ORNAMENTS[type];
     if (EXTERNAL_ALL_ORNAMENTS[type]) return EXTERNAL_ALL_ORNAMENTS[type];
     if (type === 'custom_img') {
-        const imgSrc = document.getElementById('data-hdr-c-img') ? document.getElementById('data-hdr-c-img').value : '';
+        const imgSrc = EngineInputs.el('data-hdr-c-img') ? EngineInputs.el('data-hdr-c-img').value : '';
         return imgSrc ? `<img src="${imgSrc}" style="max-height: 18px; max-width: 100%; object-fit: contain; vertical-align: middle;" />` : '';
     }
     return '';
@@ -141,8 +141,8 @@ const SECTION_DIVIDERS = {
 
 function getSectionDividerHTML(type) {
     if (!type || type === 'none') return '';
-    const userW = document.getElementById('dim-secdiv-w')?.value;
-    const userH = document.getElementById('dim-secdiv-h')?.value;
+    const userW = EngineInputs.el('dim-secdiv-w')?.value;
+    const userH = EngineInputs.el('dim-secdiv-h')?.value;
     const dimStyle = (userW ? `width: ${userW}; ` : '') + (userH ? `height: ${userH}; max-height: ${userH}; ` : '');
 
     let content = '';
@@ -151,7 +151,7 @@ function getSectionDividerHTML(type) {
     } else if (EXTERNAL_ALL_ORNAMENTS[type]) {
         content = EXTERNAL_ALL_ORNAMENTS[type];
     } else if (type === 'custom_img') {
-        const imgSrc = document.getElementById('data-sec-div-img')?.value || '';
+        const imgSrc = EngineInputs.el('data-sec-div-img')?.value || '';
         if (imgSrc) {
             content = `<img src="${imgSrc}" style="max-width: 100%; max-height: 45px; margin: auto; display: block; object-fit: contain; ${dimStyle}" />`;
         }
@@ -165,9 +165,9 @@ function getHeadingOrnamentHTML(type, isTop = false, isH2 = true) {
     const flipStyle = isTop ? 'transform: scaleY(-1);' : '';
     
     const prefix = isH2 ? (isTop ? 'dim-h2-top' : 'dim-h2-btm') : 'dim-generic';
-    const userW = document.getElementById(`${prefix}-w`)?.value;
-    const userH = document.getElementById(`${prefix}-h`)?.value;
-    const fitToText = isH2 && document.getElementById('h2-orn-fit-text')?.checked;
+    const userW = EngineInputs.el(`${prefix}-w`)?.value;
+    const userH = EngineInputs.el(`${prefix}-h`)?.value;
+    const fitToText = isH2 && EngineInputs.el('h2-orn-fit-text')?.checked;
     
     let sizeStyle = '';
     if (userW) sizeStyle += `width: ${userW}; `;
@@ -178,7 +178,7 @@ function getHeadingOrnamentHTML(type, isTop = false, isH2 = true) {
     if (ORNAMENTS_UD[type]) {
         inner = `<div class="ornament-svg-inner" style="display:inline-flex; align-items:center; justify-content:center; ${flipStyle} ${sizeStyle}">${ORNAMENTS_UD[type].svg}</div>`;
     } else if (type === 'custom_img') {
-        const imgSrc = document.getElementById('data-sec-div-img')?.value || '';
+        const imgSrc = EngineInputs.el('data-sec-div-img')?.value || '';
         if (imgSrc) {
             inner = `<img src="${imgSrc}" style="max-width: 200px; max-height: 35px; margin: auto; display: block; object-fit: contain; ${flipStyle} ${sizeStyle}" />`;
         }
@@ -193,8 +193,8 @@ function renderSideOrnamentHTML(styleKey, isLeft = false, context = 'h3') {
     const flipStyle = isLeft ? 'transform: scaleX(-1);' : '';
     
     const prefix = context === 'note' ? 'dim-note-side' : (context === 'h2title' ? 'dim-h2-title-side' : 'dim-h3-side');
-    const userW = document.getElementById(`${prefix}-w`)?.value;
-    const userH = document.getElementById(`${prefix}-h`)?.value;
+    const userW = EngineInputs.el(`${prefix}-w`)?.value;
+    const userH = EngineInputs.el(`${prefix}-h`)?.value;
     
     let sizeStyle = '';
     if (userW && userW !== 'auto') {
@@ -210,7 +210,7 @@ function renderSideOrnamentHTML(styleKey, isLeft = false, context = 'h3') {
     if (svgContent) {
         return `<span class="side-ornament-wrap" style="display:inline-flex; align-items:center; justify-content:center; ${flipStyle} ${sizeStyle}">${svgContent}</span>`;
     } else if (styleKey === 'custom_img') {
-        const imgSrc = document.getElementById('data-hdr-c-img')?.value || document.getElementById('data-sec-div-img')?.value || '';
+        const imgSrc = EngineInputs.el('data-hdr-c-img')?.value || EngineInputs.el('data-sec-div-img')?.value || '';
         return imgSrc ? `<img src="${imgSrc}" style="max-height: 100%; max-width: 100%; object-fit: contain; vertical-align: middle; ${flipStyle} ${sizeStyle}" />` : '';
     }
     return '';
@@ -224,7 +224,7 @@ const NOTE_RULE_GLYPHS = {
 };
 
 function buildNoteRuleElement() {
-    const sel = document.getElementById('note-rule-style');
+    const sel = EngineInputs.el('note-rule-style');
     const style = sel ? sel.value : 'plain';
     const rule = document.createElement('div');
     
@@ -326,17 +326,17 @@ function renderMainShaar(container, themeId, pageIndex) {
     page.className = `a4-page main-shaar-page`;
     page.setAttribute('data-page-index', String(pageIndex || 1));
 
-    const title = document.getElementById('inp-book-title')?.value || "שם הספר";
-    const subtitle = document.getElementById('inp-book-subtitle')?.value || "";
-    const desc = document.getElementById('inp-book-desc')?.value || "";
-    const sections = document.getElementById('inp-book-sections')?.value || "";
-    const author = document.getElementById('inp-book-author')?.value || "";
-    const year = document.getElementById('inp-book-year')?.value || "";
+    const title = EngineInputs.derived('inp-book-title')?.value || "שם הספר";
+    const subtitle = EngineInputs.derived('inp-book-subtitle')?.value || "";
+    const desc = EngineInputs.derived('inp-book-desc')?.value || "";
+    const sections = EngineInputs.derived('inp-book-sections')?.value || "";
+    const author = EngineInputs.derived('inp-book-author')?.value || "";
+    const year = EngineInputs.derived('inp-book-year')?.value || "";
 
     let frameHTML = '';
     let boxStyle = '';
     const customTheme = (typeof customThemes !== 'undefined') ? customThemes.find(t => t.id === themeId) : null;
-    const selMain = document.getElementById('select-shaar-main')?.value || 'theme_default';
+    const selMain = EngineInputs.el('select-shaar-main')?.value || 'theme_default';
 
     if (selMain !== 'theme_default') {
         if (EXTERNAL_SHAAR_ASSETS.main[selMain]) {
@@ -350,10 +350,10 @@ function renderMainShaar(container, themeId, pageIndex) {
         frameHTML = BUILTIN_SHAAR_THEMES[themeId].mainHTML;
     }
 
-    const uTop = document.getElementById('builder-main-top')?.value;
-    const uBottom = document.getElementById('builder-main-bottom')?.value;
-    const uRight = document.getElementById('builder-main-right')?.value;
-    const uLeft = document.getElementById('builder-main-left')?.value;
+    const uTop = EngineInputs.el('builder-main-top')?.value;
+    const uBottom = EngineInputs.el('builder-main-bottom')?.value;
+    const uRight = EngineInputs.el('builder-main-right')?.value;
+    const uLeft = EngineInputs.el('builder-main-left')?.value;
     const shaarBoxId = selMain !== 'theme_default' ? selMain : ('theme_default:' + themeId);
 
     boxStyle = resolveShaarBoxStyle('main', shaarBoxId, uTop, uBottom, uRight, uLeft, { top: 20, bottom: 16, right: 15, left: 15 });
@@ -367,7 +367,7 @@ function renderMainShaar(container, themeId, pageIndex) {
     }
 
     let mainShaarFooterHTML = '';
-    if (document.getElementById('main-shaar-show-number')?.checked && typeof formatPageNumberDisplay === 'function' && typeof pageIndex === 'number') {
+    if (EngineInputs.el('main-shaar-show-number')?.checked && typeof formatPageNumberDisplay === 'function' && typeof pageIndex === 'number') {
         const { framedPageNum, pageNumPos } = formatPageNumberDisplay(pageIndex);
         const footerClass = (pageNumPos === 'bottom_outer') ? 'pos-outer' : 'pos-center';
         const showFooter = (pageNumPos === 'bottom_center' || pageNumPos === 'bottom_outer') && framedPageNum;
@@ -406,15 +406,15 @@ function renderBackShaar(container, themeId, pageIndex) {
     page.className = 'a4-page back-shaar-page';
     page.setAttribute('data-page-index', typeof pageIndex === 'number' ? String(pageIndex) : 'גב-שער');
 
-    const copyrightText = document.getElementById('inp-book-back-copyright')?.value || "כל הזכויות שמורות";
-    const publishingText = document.getElementById('inp-book-back-publishing')?.value || "";
-    const contactText = document.getElementById('inp-book-back-contact')?.value || "";
-    const extraText = document.getElementById('inp-book-back-extra')?.value || "";
+    const copyrightText = EngineInputs.derived('inp-book-back-copyright')?.value || "כל הזכויות שמורות";
+    const publishingText = EngineInputs.derived('inp-book-back-publishing')?.value || "";
+    const contactText = EngineInputs.derived('inp-book-back-contact')?.value || "";
+    const extraText = EngineInputs.derived('inp-book-back-extra')?.value || "";
 
     let bgHTML = '';
     let boxStyle = '';
     const customTheme = (typeof customThemes !== 'undefined') ? customThemes.find(t => t.id === themeId) : null;
-    const selBack = document.getElementById('select-shaar-back')?.value || 'theme_default';
+    const selBack = EngineInputs.el('select-shaar-back')?.value || 'theme_default';
 
     if (selBack !== 'theme_default') {
         if (EXTERNAL_SHAAR_ASSETS.back[selBack]) {
@@ -430,10 +430,10 @@ function renderBackShaar(container, themeId, pageIndex) {
         bgHTML = `<div class="back-shaar-bg-left"></div>`;
     }
 
-    const uTop = document.getElementById('builder-back-top')?.value;
-    const uBottom = document.getElementById('builder-back-bottom')?.value;
-    const uRight = document.getElementById('builder-back-right')?.value;
-    const uLeft = document.getElementById('builder-back-left')?.value;
+    const uTop = EngineInputs.el('builder-back-top')?.value;
+    const uBottom = EngineInputs.el('builder-back-bottom')?.value;
+    const uRight = EngineInputs.el('builder-back-right')?.value;
+    const uLeft = EngineInputs.el('builder-back-left')?.value;
     const shaarBoxId = selBack !== 'theme_default' ? selBack : ('theme_default:' + themeId);
 
     boxStyle = resolveShaarBoxStyle('back', shaarBoxId, uTop, uBottom, uRight, uLeft, { top: 25, bottom: 25, right: 20, left: 95 });
@@ -442,7 +442,7 @@ function renderBackShaar(container, themeId, pageIndex) {
     }
 
     let backShaarFooterHTML = '';
-    if (document.getElementById('back-shaar-show-number')?.checked && typeof formatPageNumberDisplay === 'function' && typeof pageIndex === 'number') {
+    if (EngineInputs.el('back-shaar-show-number')?.checked && typeof formatPageNumberDisplay === 'function' && typeof pageIndex === 'number') {
         const { framedPageNum, pageNumPos } = formatPageNumberDisplay(pageIndex);
         const footerClass = (pageNumPos === 'bottom_outer') ? 'pos-outer' : 'pos-center';
         const showFooter = (pageNumPos === 'bottom_center' || pageNumPos === 'bottom_outer') && framedPageNum;
@@ -488,7 +488,7 @@ function renderSubShaar(container, token, themeId, pageIndex) {
     let bgHTML = '';
     let boxStyle = '';
     const customTheme = (typeof customThemes !== 'undefined') ? customThemes.find(t => t.id === themeId) : null;
-    const selSub = document.getElementById('select-shaar-sub')?.value || 'theme_default';
+    const selSub = EngineInputs.el('select-shaar-sub')?.value || 'theme_default';
 
     if (selSub !== 'theme_default') {
         if (EXTERNAL_SHAAR_ASSETS.sub[selSub]) {
@@ -504,10 +504,10 @@ function renderSubShaar(container, token, themeId, pageIndex) {
         bgHTML = `<div class="sub-shaar-bg-right"></div>`;
     }
 
-    const uTop = document.getElementById('builder-sub-top')?.value;
-    const uBottom = document.getElementById('builder-sub-bottom')?.value;
-    const uRight = document.getElementById('builder-sub-right')?.value;
-    const uLeft = document.getElementById('builder-sub-left')?.value;
+    const uTop = EngineInputs.el('builder-sub-top')?.value;
+    const uBottom = EngineInputs.el('builder-sub-bottom')?.value;
+    const uRight = EngineInputs.el('builder-sub-right')?.value;
+    const uLeft = EngineInputs.el('builder-sub-left')?.value;
     const shaarBoxId = selSub !== 'theme_default' ? selSub : ('theme_default:' + themeId);
 
     boxStyle = resolveShaarBoxStyle('sub', shaarBoxId, uTop, uBottom, uRight, uLeft, { top: 20, bottom: 20, right: 95, left: 15 });
@@ -523,7 +523,7 @@ function renderSubShaar(container, token, themeId, pageIndex) {
     }
 
     let subShaarFooterHTML = '';
-    if (document.getElementById('sub-shaar-show-number')?.checked && typeof formatPageNumberDisplay === 'function' && typeof pageIndex === 'number') {
+    if (EngineInputs.el('sub-shaar-show-number')?.checked && typeof formatPageNumberDisplay === 'function' && typeof pageIndex === 'number') {
         const { framedPageNum, pageNumPos } = formatPageNumberDisplay(pageIndex);
         const footerClass = (pageNumPos === 'bottom_outer') ? 'pos-outer' : 'pos-center';
         const showFooter = (pageNumPos === 'bottom_center' || pageNumPos === 'bottom_outer') && framedPageNum;
@@ -553,19 +553,19 @@ function renderSubShaar(container, token, themeId, pageIndex) {
    6. רקעים מותאמים לעמודי תוכן
    ========================================================================== */
 function getContentBgCSS(roleKey) {
-    const modeEl = document.getElementById('cbg-' + roleKey + '-mode');
+    const modeEl = EngineInputs.el('cbg-' + roleKey + '-mode');
     if (!modeEl) return '';
     const mode = modeEl.value;
     if (mode === 'color') {
-        const c = document.getElementById('cbg-' + roleKey + '-color');
+        const c = EngineInputs.el('cbg-' + roleKey + '-color');
         return c ? `background-color:${c.value};background-image:none;` : '';
     }
     if (mode === 'texture') {
         return `background-color:#fdfcf6;background-image:url("${CBG_TEXTURE_SVG}");background-repeat:repeat;`;
     }
     if (mode === 'image') {
-        const imgEl = document.getElementById('data-cbg-' + roleKey + '-img');
-        const opEl = document.getElementById('cbg-' + roleKey + '-opacity');
+        const imgEl = EngineInputs.el('data-cbg-' + roleKey + '-img');
+        const opEl = EngineInputs.el('cbg-' + roleKey + '-opacity');
         const img = imgEl ? imgEl.value : '';
         if (!img) return '';
         const op = opEl ? (parseInt(opEl.value, 10) / 100) : 0.15;

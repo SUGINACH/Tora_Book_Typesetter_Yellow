@@ -44,5 +44,77 @@
         return { passes, lateFonts: late, fontErrors: erroredFonts(), unstable, fontsHash: fnv(now.join('\n')), fontCount: now.length };
     }
 
-    root.EngineInputs = Object.assign(root.EngineInputs || {}, { fnv, runUntilFontsStable });
+    /* ===== שלב 2: צילום הגדרות =====
+       המנוע קרא הגדרות ישירות מה-DOM ב-~200 מקומות (typesetter.js, decorations.js) ובזמנים שונים בתוך העימוד.
+       עכשיו: צילום אחד בתחילת עימוד (beginRun), וכל הקריאות עוברות דרך el(id). אין צילום מחוץ לעימוד —
+       שם el(id) קורא את ה-DOM החי, כמו קודם. הדוח (lastRun) מראה בדיוק אילו הגדרות נקראו ואילו חסרות.
+
+       פקדי inp-book-* (שם ספר, מחבר, ...) אינם בצילום: שלב ה-parse של המנוע *כותב* אליהם מתוך שורות הטקסט
+       (typesetter.js, בלוק "שם הספר - ..."), ושלבים מאוחרים קוראים אותם. זה מצב נסתר (הפלט תלוי בערך שנשאר
+       מהרצה קודמת), ולכן הם נגישים דרך derived(id) והדוח מציין אילו מהם שונו בהרצה (derivedChanged). */
+    const NON_SETTING = new Set(['raw-input']);
+    const DERIVED_PREFIX = 'inp-book-';
+    let cur = null;
+
+    function snapshotControl(c) {
+        const attrs = {};
+        for (const a of c.attributes) attrs[a.name] = a.value;
+        return Object.freeze({
+            id: c.id, tagName: c.tagName, type: c.type, name: c.name, value: c.value, checked: !!c.checked,
+            disabled: !!c.disabled, min: c.min, max: c.max, step: c.step, selectedIndex: c.selectedIndex,
+            dataset: Object.freeze(Object.assign({}, c.dataset)),
+            getAttribute: n => (Object.prototype.hasOwnProperty.call(attrs, n) ? attrs[n] : null),
+            hasAttribute: n => Object.prototype.hasOwnProperty.call(attrs, n)
+        });
+    }
+    function readDerived() {
+        const o = {};
+        document.querySelectorAll('[id^="' + DERIVED_PREFIX + '"]').forEach(c => { o[c.id] = c.value; });
+        return o;
+    }
+    function beginRun() {
+        if (cur) { cur.depth++; return; }
+        const map = new Map();
+        document.querySelectorAll('input[id], select[id], textarea[id]').forEach(c => {
+            if (NON_SETTING.has(c.id) || c.id.startsWith(DERIVED_PREFIX)) return;
+            map.set(c.id, snapshotControl(c));
+        });
+        cur = { depth: 1, map, used: new Set(), missing: new Set(), live: new Set(), derivedUsed: new Set(), derivedAtStart: readDerived() };
+    }
+    /* תחליף לקריאה (בלבד) של document.getElementById(id) עבור הגדרה */
+    function el(id) {
+        if (!cur) return document.getElementById(id);
+        const m = cur.map.get(id);
+        if (m) { cur.used.add(id); return m; }
+        const live = document.getElementById(id);
+        if (live) { cur.live.add(id); return live; }
+        cur.missing.add(id);
+        return null;
+    }
+    /* גישה חיה לפקד שהמנוע עצמו כותב/קורא (inp-book-*), עם רישום */
+    function derived(id) {
+        if (cur) cur.derivedUsed.add(id);
+        return document.getElementById(id);
+    }
+    function endRun() {
+        if (!cur) return;
+        if (--cur.depth > 0) return;
+        const startD = cur.derivedAtStart, endD = readDerived();
+        const usedIds = [...cur.used].sort();
+        const allIds = [...cur.map.keys()].sort();
+        const pair = id => { const m = cur.map.get(id); return [id, m.value, m.checked]; };
+        root.EngineInputs.lastRun = {
+            settingsHash: fnv(JSON.stringify(allIds.map(pair))),
+            settingsUsedCount: usedIds.length,
+            settingsUsedHash: fnv(JSON.stringify(usedIds.map(pair))),
+            settingsMissing: [...cur.missing].sort(),
+            liveReads: [...cur.live].sort(),
+            derivedUsed: [...cur.derivedUsed].sort(),
+            derivedChanged: Object.keys(endD).filter(k => endD[k] !== startD[k]).sort(),
+            derivedAtStartHash: fnv(JSON.stringify(startD))
+        };
+        cur = null;
+    }
+
+    root.EngineInputs = Object.assign(root.EngineInputs || {}, { fnv, runUntilFontsStable, beginRun, endRun, el, derived, lastRun: null });
 })(typeof window !== 'undefined' ? window : globalThis);

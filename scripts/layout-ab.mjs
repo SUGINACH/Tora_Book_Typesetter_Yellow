@@ -161,6 +161,11 @@ try {
 } finally { await browser.close(); }
 
 const sum = (rs, f) => rs.reduce((s, r) => s + f(r), 0);
+const inputsLine = r => r && r.report && r.report.settingsUsedHash ? `טקסט ${r.report.textHash} | הגדרות(${r.report.settingsUsedCount}) ${r.report.settingsUsedHash} | גופנים(${r.report.fontCount}) ${r.report.fontsHash} | css ${r.report.cssVarsHash}${r.report.settingsMissing.length ? ' | חסרות: ' + r.report.settingsMissing.join(',') : ''}${r.report.derivedChanged.length ? ' | המנוע כתב לפקדים: ' + r.report.derivedChanged.join(',') : ''}` : null;
+for (const [nm, rs] of [['A', resA], ['B', resB]]) { const l = rs && inputsLine(rs[0]); if (l) console.log(`קלטים ${nm} (בסיס): ${l}`); }
+if (resB) resA.forEach((ra, i) => { const x = ra.report, y = resB[i].report; if (!x || !y || !x.settingsUsedHash || !y.settingsUsedHash) return;
+    const diffs = ['textHash', 'settingsUsedHash', 'cssVarsHash', 'fontsHash'].filter(k => x[k] !== y[k]);
+    if (diffs.length) console.log(`⚠ וריאנט "${ra.name}": הקלטים שונים בין A ל-B (${diffs.join(', ')}) — ההבדל בפריסה אינו רק קוד`); });
 for (const [nm, rs] of [['A', resA], ['B', resB]]) {
     if (!rs) continue;
     if (rs.warm.lateFonts.length && rs.warm.firstRunDiffers) console.log(`⚠ ${nm}: גופנים שנטענו באמצע ההרצה הראשונה: ${rs.warm.lateFonts.join(', ')}${rs.warm.firstRunDiffers ? ' — והפריסה של ההרצה הראשונה שונה מהמצב היציב' : ''}. המדידות כאן אחרי חימום.`);

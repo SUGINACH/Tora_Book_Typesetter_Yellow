@@ -2499,3 +2499,20 @@ V21 הורץ ב-Chrome headless (Linux, Chrome 153) על `mid_long_test_text.txt
 ### קבצים:
 - `Reports_Summaries_Studies/תכנית_ארגון_מנוע_העימוד.md` — התכנית המלאה.
 - `scripts/layout-ab.mjs` — A/B בין שתי גרסאות על סדרת וריאנטים, `--selftest`, חימום גופנים וזיהוי גופן שנטען באמצע מדידה.
+
+---
+## Task ID: v22-engine-steps-1-2
+### Agent: Claude (ענף V22)
+### Task: שלבים 1-2 בתכנית ארגון המנוע — גופנים והגדרות כקלטים מפורשים
+
+### מה נעשה:
+- `engine-inputs.js` (חדש): `runUntilFontsStable` (עימוד עד שקבוצת הגופנים הטעונים יציבה), צילום הגדרות (`beginRun`/`el`/`endRun`), גישה לפקדים נגזרים (`derived`), ודוח קלטים עם hashes. נטען לפני `decorations.js` ב-`index.html` וב-`renderer.html`.
+- `renderer-bridge.js`: הודעות `typeset` בתור, עימוד עד יציבות גופנים, והדוח ב-`render-done.report`.
+- `typesetter.js`, `decorations.js`: כל קריאות ההגדרה (215) דרך `EngineInputs.el`; פקדי `inp-book-*` דרך `EngineInputs.derived`.
+- `tests/engine-inputs.test.js`: 9 בדיקות יחידה.
+
+### אימות (מנוע V22, `very_long_test_text.txt` 1,500 שורות, בדיקת הגיאומטריה של V21):
+- שלב 1: `--selftest --no-warmup`: A1 = A2 = A3 (0 עמודים שונים); ההרצה הראשונה `passes=2`. מול לפני: 0 הפרשים.
+- שלב 2: 0 עמודים שונים ב-4 וריאנטים מול שלב 1.
+
+### ממצא: ה-parse כותב לפקדי `inp-book-*` (10 שורות כתיבה ב-`typesetter.js`), כך שהפלט תלוי בהיסטוריה. בריצה: 6 פקדים שונו. מתועד בתכנית, סעיף 9.
