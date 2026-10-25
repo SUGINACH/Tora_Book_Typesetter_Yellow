@@ -150,10 +150,14 @@
                     if (typeof updateGrid === 'function') updateGrid();
                     if (typeof updateStyles === 'function') updateStyles();
                     let report = {};
+                    const traceOn = !!(msg.trace && window.EngineTrace);   // [V22/שלב 3] יומן החלטות — אופציונלי, כבוי כברירת מחדל
+                    if (traceOn) EngineTrace.enable();
                     if (typeof typesetDocument === 'function') {
-                        if (window.EngineInputs) report = await EngineInputs.runUntilFontsStable(() => typesetDocument());
-                        else typesetDocument();
+                        const runOnce = () => { if (traceOn) EngineTrace.reset(); typesetDocument(); };   // היומן משקף את ההרצה האחרונה בלבד
+                        if (window.EngineInputs) report = await EngineInputs.runUntilFontsStable(runOnce);
+                        else runOnce();
                     }
+                    if (traceOn) report.trace = EngineTrace.summary();
                     if (window.EngineInputs) {
                         report.textHash = EngineInputs.fnv(msg.text || '');
                         report.cssVarsHash = EngineInputs.fnv(document.documentElement.getAttribute('style') || '');
@@ -163,6 +167,8 @@
                     e.source.postMessage({ type: 'render-done', pageCount: pageCount, report: report }, e.origin);
                 } catch (err) {
                     e.source.postMessage({ type: 'render-error', error: err.message }, e.origin);
+                } finally {
+                    if (window.EngineTrace && EngineTrace.isEnabled()) EngineTrace.disable();
                 }
             });
         } else if (msg.type === 'getHTML') {
