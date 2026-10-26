@@ -1,0 +1,109 @@
+name: V22 checks
+
+# בדיקות הענף V22: בדיקות יחידה (בלי דפדפן), בדיקות פריסה ב-Chrome headless (דטרמיניזם, דוח אבחון),
+# ובבקשות מיזוג — A/B מול הענף הבסיסי על סדרת וריאנטים קטנים. התוצאות נכתבות לסיכום הריצה ול-artifact.
+
+on:
+  push:
+    branches: [V22]
+  pull_request:
+    branches: [V22]
+  workflow_dispatch:
+
+concurrency:
+  group: v22-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Unit tests (no browser)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run unit tests
+        run: node --test tests/*.test.js
+
+  layout:
+    name: Layout checks (headless Chrome)
+    needs: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install puppeteer-core
+        run: npm install --no-save puppeteer-core
+      - name: Chrome version
+        run: google-chrome --version
+      - name: Determinism self-test (engine settles fonts by itself, no external warm-up)
+        run: |
+          mkdir -p artifacts
+          node scripts/layout-ab.mjs --a . --text mid_long_test_text.txt --lines 600 --audit geometry-audit.js --selftest --no-warmup 2>&1 | tee artifacts/selftest.txt
+      - name: Diagnostic report and trace check
+        run: |
+          node scripts/layout-explain.mjs --root . --text mid_long_test_text.txt --lines 600 --audit geometry-audit.js --top 8 --json artifacts/explain.json 2>&1 | tee artifacts/explain.txt
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo '## Layout checks (V22)'
+            echo
+            echo '### Self-test'
+            echo '```'
+            cat artifacts/selftest.txt 2>/dev/null || true
+            echo '```'
+            echo
+            echo '### Findings explained by engine pass chains'
+            echo '```'
+            head -90 artifacts/explain.txt 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: layout-reports
+          path: artifacts/
+
+  ab-compare:
+    name: A/B against base branch (pull requests)
+    if: github.event_name == 'pull_request'
+    needs: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: head
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install puppeteer-core
+        run: npm install --no-save puppeteer-core
+      - name: A/B on a series of small setting variants
+        run: |
+          mkdir -p artifacts
+          node head/scripts/layout-ab.mjs --a base --b head --text head/mid_long_test_text.txt --lines 600 --variants 3 --audit head/geometry-audit.js 2>&1 | tee artifacts/ab.txt
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo '## A/B: base vs head'
+            echo '```'
+            cat artifacts/ab.txt 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ab-report
+          path: artifacts/

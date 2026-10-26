@@ -45,7 +45,8 @@ let exe = [o.chrome, process.env.CHROME_PATH,
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser']
     .filter(Boolean).find(p => fs.existsSync(p));
 let launchArgs = ['--no-sandbox'];
-if (!exe) { try { const c = (await import('@sparticuz/chromium')).default; exe = await c.executablePath(); launchArgs = [...c.args, '--no-sandbox']; } catch { /* אין */ } }
+let headlessMode = true;   // Chrome מותקן: headless רגיל. ב-Chrome 132+ מצב 'shell' קיים רק בבינארי headless-shell נפרד
+if (!exe) { try { const c = (await import('@sparticuz/chromium')).default; exe = await c.executablePath(); launchArgs = [...c.args, '--no-sandbox']; headlessMode = 'shell'; } catch { /* אין */ } }
 if (!exe) { console.error('לא נמצא Chrome (--chrome <path> / CHROME_PATH)'); process.exit(2); }
 
 const VARIANTS = [
@@ -153,7 +154,7 @@ function diffFp(A, B) {
     return { changed, textMoved, geomOnly, first };
 }
 
-const browser = await puppeteer.launch({ args: launchArgs, executablePath: exe, headless: 'shell', protocolTimeout: 1800000, defaultViewport: { width: 1280, height: 900 } });
+const browser = await puppeteer.launch({ args: launchArgs, executablePath: exe, headless: headlessMode, protocolTimeout: 1800000, defaultViewport: { width: 1280, height: 900 } });
 let resA, resB = null;
 try {
     resA = await runTree(browser, o.a, PLAN);
@@ -180,6 +181,7 @@ if (o.selftest) {
     console.log(`\nA1 מול A2 (אותה קלט, אותו מושב):      עמודים ששונו ${d12.changed}`);
     console.log(`A1 מול A3 (אותו קלט אחרי טקסט אחר):    עמודים ששונו ${d13.changed}`);
     console.log(d12.changed === 0 && d13.changed === 0 ? 'המנוע דטרמיניסטי וללא זליגת מצב בין הרצות' : 'זוהתה תלות במצב/היסטוריה — המנוע אינו פונקציה טהורה של הקלט');
+    if (d12.changed || d13.changed) process.exitCode = 1;   // כישלון ב-CI
 } else if (!resB) {
     if (resA[0].top && resA[0].top.length) { console.log('החמורים ביותר בבסיס:'); resA[0].top.forEach(t => console.log(`  עמוד ${t.p} [${t.s}] ${t.k}: ${t.m}`)); console.log(''); }
     resA.forEach((r, i) => { const d = i > 0 ? diffFp(resA[0].fp, r.fp) : null; console.log(`${r.name.padEnd(22)} עמודים ${String(r.pages).padStart(4)} | ממצאים ${String(r.issues).padStart(4)} (high ${r.high}) | ${JSON.stringify(r.byKind)}${d ? ` | שונו ${d.changed}/${Math.max(r.pages, resA[0].pages)} עמודים מול הבסיס` : ''}`); });

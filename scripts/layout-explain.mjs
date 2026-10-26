@@ -35,7 +35,8 @@ try { puppeteer = (await import('puppeteer-core')).default; } catch { console.er
 let exe = [o.chrome, process.env.CHROME_PATH, 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].filter(Boolean).find(p => fs.existsSync(p));
 let launchArgs = ['--no-sandbox'];
-if (!exe) { try { const c = (await import('@sparticuz/chromium')).default; exe = await c.executablePath(); launchArgs = [...c.args, '--no-sandbox']; } catch { /* אין */ } }
+let headlessMode = true;   // Chrome מותקן: headless רגיל. ב-Chrome 132+ מצב 'shell' קיים רק בבינארי headless-shell נפרד
+if (!exe) { try { const c = (await import('@sparticuz/chromium')).default; exe = await c.executablePath(); launchArgs = [...c.args, '--no-sandbox']; headlessMode = 'shell'; } catch { /* אין */ } }
 if (!exe) { console.error('לא נמצא Chrome (--chrome <path> / CHROME_PATH)'); process.exit(2); }
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
@@ -96,7 +97,7 @@ const explainFn = (topK, kinds) => {
     };
 };
 
-const browser = await puppeteer.launch({ args: launchArgs, executablePath: exe, headless: 'shell', protocolTimeout: 1800000, defaultViewport: { width: 1280, height: 900 } });
+const browser = await puppeteer.launch({ args: launchArgs, executablePath: exe, headless: headlessMode, protocolTimeout: 1800000, defaultViewport: { width: 1280, height: 900 } });
 let out;
 try {
     const page = await browser.newPage();
@@ -143,3 +144,4 @@ for (const e of out.explained) {
     console.log('');
 }
 if (o.json) fs.writeFileSync(o.json, JSON.stringify(out, null, 2));
+if (out.traceChangedPages > 0) process.exitCode = 1;   // היומן לא אמור לשנות את הפריסה

@@ -38,8 +38,9 @@ let exe = [args.chrome, process.env.CHROME_PATH,
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser']
     .filter(Boolean).find(p => fs.existsSync(p));
 let launchArgs = ['--no-sandbox'];
+let headlessMode = true;   // Chrome מותקן: headless רגיל. ב-Chrome 132+ מצב 'shell' קיים רק בבינארי headless-shell נפרד
 if (!exe) {
-    try { const c = (await import('@sparticuz/chromium')).default; exe = await c.executablePath(); launchArgs = [...c.args, '--no-sandbox']; }
+    try { const c = (await import('@sparticuz/chromium')).default; exe = await c.executablePath(); launchArgs = [...c.args, '--no-sandbox']; headlessMode = 'shell'; }
     catch { /* אין Chrome */ }
 }
 if (!exe) { console.error('לא נמצא Chrome. התקן אותו או ציין --chrome <path> / CHROME_PATH'); process.exit(2); }
@@ -64,7 +65,7 @@ for (const [k, v] of Object.entries(settings)) {
     if (typeof v === 'string' && /^(font-|f-)/.test(k)) for (const m of v.matchAll(/'([^']+)'/g)) families.add(m[1]);
 }
 
-const browser = await puppeteer.launch({ args: launchArgs, executablePath: exe, headless: 'shell', protocolTimeout: 900000, defaultViewport: { width: 1280, height: 900 } });
+const browser = await puppeteer.launch({ args: launchArgs, executablePath: exe, headless: headlessMode, protocolTimeout: 900000, defaultViewport: { width: 1280, height: 900 } });
 try {
     const page = await browser.newPage();
     page.on('pageerror', e => console.error('[pageerror]', String(e).slice(0, 200)));
