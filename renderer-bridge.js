@@ -123,6 +123,34 @@
     // הזרקת טקסט מהדף הראשי
     let __typesetQueue = Promise.resolve();   // [V22] הודעות עימוד מטופלות בתור, כמו שהיה כשהטיפול היה סינכרוני
 
+    /* [V22] גוף העימוד כפונקציה אחת — משמש גם את 'typeset' וגם את 'diagnose' (עימוד מחדש של הקלט האחרון עם יומן) */
+    async function runTypesetMsg(msg) {
+        applySettings(msg.settings);
+        applyText(msg.text);
+        if (typeof updateGrid === 'function') updateGrid();
+        if (typeof updateStyles === 'function') updateStyles();
+        let report = {};
+        const traceOn = !!(msg.trace && window.EngineTrace);   // יומן החלטות — אופציונלי, כבוי כברירת מחדל
+        try {
+            if (traceOn) EngineTrace.enable();
+            if (typeof typesetDocument === 'function') {
+                const runOnce = () => { if (traceOn) EngineTrace.reset(); typesetDocument(); };   // היומן משקף את ההרצה האחרונה בלבד
+                if (window.EngineInputs) report = await EngineInputs.runUntilFontsStable(runOnce);   // עד שקבוצת הגופנים יציבה
+                else runOnce();
+            }
+            if (traceOn) report.trace = EngineTrace.summary();
+        } finally {
+            if (window.EngineTrace && EngineTrace.isEnabled()) EngineTrace.disable();
+        }
+        if (window.EngineInputs) {
+            report.textHash = EngineInputs.fnv(msg.text || '');
+            report.cssVarsHash = EngineInputs.fnv(document.documentElement.getAttribute('style') || '');
+            Object.assign(report, EngineInputs.lastRun || {});
+        }
+        window.__lastTypesetMsg = msg;
+        return { pageCount: document.querySelectorAll('.a4-page').length, report: report };
+    }
+
     function applyText(text) {
         const el = document.getElementById('raw-input');
         if (el) {
@@ -141,34 +169,26 @@
         if (!msg || !msg.type) return;
 
         if (msg.type === 'typeset') {
-            /* [V22/שלב 1] עימוד עד שקבוצת הגופנים הטעונים יציבה (גופן שנטען באמצע ההרצה משנה את הפריסה),
-               והחזרת דוח קלטים ב-render-done. בלי EngineInputs — הנתיב הישן. */
             __typesetQueue = __typesetQueue.then(async () => {
                 try {
-                    applySettings(msg.settings);
-                    applyText(msg.text);
-                    if (typeof updateGrid === 'function') updateGrid();
-                    if (typeof updateStyles === 'function') updateStyles();
-                    let report = {};
-                    const traceOn = !!(msg.trace && window.EngineTrace);   // [V22/שלב 3] יומן החלטות — אופציונלי, כבוי כברירת מחדל
-                    if (traceOn) EngineTrace.enable();
-                    if (typeof typesetDocument === 'function') {
-                        const runOnce = () => { if (traceOn) EngineTrace.reset(); typesetDocument(); };   // היומן משקף את ההרצה האחרונה בלבד
-                        if (window.EngineInputs) report = await EngineInputs.runUntilFontsStable(runOnce);
-                        else runOnce();
-                    }
-                    if (traceOn) report.trace = EngineTrace.summary();
-                    if (window.EngineInputs) {
-                        report.textHash = EngineInputs.fnv(msg.text || '');
-                        report.cssVarsHash = EngineInputs.fnv(document.documentElement.getAttribute('style') || '');
-                        Object.assign(report, EngineInputs.lastRun || {});
-                    }
-                    const pageCount = document.querySelectorAll('.a4-page').length;
-                    e.source.postMessage({ type: 'render-done', pageCount: pageCount, report: report }, e.origin);
+                    const r = await runTypesetMsg(msg);
+                    e.source.postMessage({ type: 'render-done', pageCount: r.pageCount, report: r.report }, e.origin);
                 } catch (err) {
                     e.source.postMessage({ type: 'render-error', error: err.message }, e.origin);
-                } finally {
-                    if (window.EngineTrace && EngineTrace.isEnabled()) EngineTrace.disable();
+                }
+            });
+        } else if (msg.type === 'diagnose') {
+            /* [V22/שלב 3] דוח אבחון: מעמד מחדש את הקלט האחרון עם יומן החלטות (אותה פריסה — נבדק) ומחזיר דוח */
+            __typesetQueue = __typesetQueue.then(async () => {
+                try {
+                    const last = window.__lastTypesetMsg;
+                    if (!last) throw new Error('אין עימוד קודם לאבחון — עמד קודם את המסמך');
+                    if (!window.EngineDiagnostics || !window.EngineTrace) throw new Error('engine-diagnostics.js / engine-trace.js לא נטענו');
+                    const r = await runTypesetMsg(Object.assign({}, last, { trace: true }));
+                    const d = EngineDiagnostics.build({ top: msg.top || 10, kinds: msg.kinds || [], report: r.report });
+                    e.source.postMessage({ type: 'diagnose-result', text: d.text, json: d.json }, e.origin);
+                } catch (err) {
+                    e.source.postMessage({ type: 'diagnose-error', error: err.message }, e.origin);
                 }
             });
         } else if (msg.type === 'getHTML') {

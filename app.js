@@ -2126,6 +2126,7 @@ function initTabSystem() {
             <button id="btn-geom-paint" class="btn-tool btn-primary" style="flex:1;" title="הצג קווי גבול גיאומטריים על העמודים">📐 גיאומטריה</button>
             <button id="btn-geom-clear" class="btn-tool btn-secondary" style="flex:0.5;" title="נקה overlay">✖ נקה</button>
             <button id="btn-geom-export" class="btn-tool btn-secondary" style="flex:0.7;" title="ייצא פירוט מלא כ-JSON">📋 פירוט מלא</button>
+            <button id="btn-diagnose" class="btn-tool btn-primary" style="flex:0.9;" title="דוח אבחון מלא: קלטים, ממצאים, והשרשרת של המעברים שיצרה כל ממצא. מעמד מחדש את המסמך עם יומן החלטות (אותה פריסה)">🩺 דוח אבחון</button>
             <select id="geom-level" style="flex:0.7;padding:4px;font-size:9pt;border:1px solid #cbd5e1;border-radius:3px;background:#fff;" title="רמת פירוט">
                 <option value="0">רק בעיות</option>
                 <option value="1" selected>בלוקים</option>
@@ -2312,6 +2313,36 @@ function initTabSystem() {
             }
         });
     }
+    // [V22/שלב 3] דוח אבחון: קלטים + ממצאים + שרשרת המעברים של כל ממצא, כקובץ Markdown (ומועתק ללוח)
+    const btnDiagnose = document.getElementById('btn-diagnose');
+    if (btnDiagnose) {
+        btnDiagnose.addEventListener('click', async function() {
+            btnDiagnose.disabled = true;
+            btnDiagnose.textContent = '⏳ מאבחן...';
+            try {
+                const result = await requestDiagnose();
+                if (result.error) {
+                    alert('שגיאה: ' + result.error);
+                } else {
+                    window.__lastDiagnosis = result;
+                    const blob = new Blob([result.text], { type: 'text/markdown;charset=utf-8' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                    a.download = `layout-diagnosis-${ts}.md`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    setTimeout(() => URL.revokeObjectURL(url), 5000);
+                    try { navigator.clipboard && navigator.clipboard.writeText(result.text).catch(() => {}); } catch (e) { /* אין הרשאה */ }
+                }
+            } finally {
+                btnDiagnose.disabled = false;
+                btnDiagnose.textContent = '🩺 דוח אבחון';
+            }
+        });
+    }
     // עדכן overlay אוטומטית כשמשנים רמת פירוט
     const levelSel = document.getElementById('geom-level');
     if (levelSel) {
@@ -2488,6 +2519,11 @@ window.addEventListener('message', function(e) {
             window.__geomExportLastResult = msg;
             console.log('📋 geom-export התקבל');
         }
+    } else if (msg.type === 'diagnose-result' || msg.type === 'diagnose-error') {
+        if (typeof window.__diagnosePending === 'function') {
+            window.__diagnosePending(msg.type === 'diagnose-error' ? { error: msg.error } : msg);
+            window.__diagnosePending = null;
+        }
     } else if (msg.type === 'geom-clear-done') {
         console.log('🧹 overlay גיאומטרי נוקה');
     } else if (msg.type === 'geom-error') {
@@ -2550,6 +2586,22 @@ function clearGeomOverlay() {
 }
 
 // [חדש — גיאומטריה] ייצוא פירוט מלא כ-JSON
+// [V22/שלב 3] בקשת דוח אבחון מה-iframe (מעמד מחדש עם יומן, ולכן יכול לקחת זמן במסמך ארוך)
+function requestDiagnose() {
+    return new Promise((resolve) => {
+        const frame = document.getElementById('render-frame');
+        if (!frame || !frame.contentWindow) { resolve({ error: 'no iframe' }); return; }
+        window.__diagnosePending = resolve;
+        frame.contentWindow.postMessage({ type: 'diagnose', top: 10 }, '*');
+        setTimeout(() => {
+            if (window.__diagnosePending) {
+                window.__diagnosePending({ error: 'timeout' });
+                window.__diagnosePending = null;
+            }
+        }, 600000);
+    });
+}
+
 function requestGeomExport() {
     return new Promise((resolve) => {
         const frame = document.getElementById('render-frame');
