@@ -64,6 +64,19 @@ jobs:
             head -90 artifacts/explain.txt 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish results as annotations (readable through the API)
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import io
+          def esc(s): return s.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          for title, path, n in (('selftest', 'artifacts/selftest.txt', 40), ('explain', 'artifacts/explain.txt', 70)):
+              try:
+                  txt = '\n'.join(io.open(path, encoding='utf-8').read().split('\n')[:n])
+              except Exception as e:
+                  txt = 'missing: ' + str(e)
+              print('::notice title=layout-' + title + '::' + esc(txt))
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
