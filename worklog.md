@@ -2545,3 +2545,15 @@ V21 הורץ ב-Chrome headless (Linux, Chrome 153) על `mid_long_test_text.txt
 
 ### אימות: בתוך ה-iframe 12.2 שניות, 0 עמודים שונים אחרי האבחון; מהדף הראשי לחיצה על הכפתור מפיקה דוח עם 10 ממצאים מוסברים. 36 בדיקות יחידה עוברות.
 ### ממצא: הגדרות הממשק (177 נקראו) שונות מ-`default_settings.json` (155): hash ההגדרות בדוח מסביר את ההבדל בפריסה (153 מול 141 עמודים).
+
+---
+## Task ID: v22-new-repo-ci
+### Agent: Claude (ענף V22, ריפו Tora_Book_Typesetter_Yellow)
+### Task: מעבר לריפו החדש והוספת CI
+
+### מה נעשה:
+- אומת שהענף `V22` בריפו החדש זהה ל-`293f124` ושכל 36 בדיקות היחידה עוברות.
+- `.github/workflows/v22-checks.yml`: unit, layout (selftest + explain ב-Chrome headless), ו-A/B בבקשות מיזוג.
+- הכלים (`layout-ab.mjs`, `layout-explain.mjs`, `geometry-audit-headless.mjs`) עובדים עם Chrome מותקן (headless רגיל) ומחזירים exit code כשל בנדטרמיניזם או כשהיומן משנה פריסה.
+
+### אימות: שתי ריצות ירוקות ב-GitHub Actions. selftest: A1=A2=A3 (0 עמודים שונים); explain: היומן לא שינה פריסה.
