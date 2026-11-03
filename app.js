@@ -1781,223 +1781,178 @@ window.loadExtendedFonts = loadExtendedFonts;
    חשוב: משתמש ב-CSS של המערכת הנוכחית (עדכון_ממשק_9), לא ב-CSS של v18.
    ========================================================================== */
 async function exportRenderedHTML() {
-    const bookContainer = document.getElementById('book-container');
-    if (!bookContainer) {
-        alert('אין מסמך מרונדר. הרץ עימוד קודם.');
+    const frame = document.getElementById('render-frame');
+    const btn = document.getElementById('btn-export-html');
+
+    if (!frame || !frame.contentWindow) {
+        alert('לא נמצא iframe של מנוע העימוד. טען מחדש את המערכת ונסה שוב.');
         return;
     }
 
-    const btn = document.getElementById('btn-export-html');
     if (btn) {
         btn.disabled = true;
         btn.textContent = '⏳ מייצא...';
     }
 
     try {
-        // 1) שכפול ה-#preview-pane (שמכיל את #book-container) — כך המבנה
-        // ההיררכי נשמר, וה-layout זהה ל-DOM החי.
-        const previewPane = document.getElementById('preview-pane');
-        const clone = previewPane.cloneNode(true);
-
-        // 2) הסרת event handlers
-        clone.querySelectorAll('*').forEach(el => {
-            el.removeAttribute('onclick');
+        // קבלת תוכן המסמך מה-iframe באמצעות פרוטוקול הגשר הקיים.
+        const rendered = await new Promise((resolve, reject) => {
+            const requestId = 'html-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+            let settled = false;
+            const cleanup = () => {
+                window.removeEventListener('message', onMessage);
+                clearTimeout(timeoutId);
+            };
+            const finish = (callback, value) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                callback(value);
+            };
+            const onMessage = (event) => {
+                if (event.source !== frame.contentWindow) return;
+                const msg = event.data;
+                if (!msg || msg.type !== 'html-result' || msg.requestId !== requestId) return;
+                finish(resolve, msg);
+            };
+            const timeoutId = setTimeout(() => {
+                finish(reject, new Error('ה־iframe לא החזיר את תוכן המסמך בתוך 20 שניות. ייתכן שהעימוד עדיין מתבצע או שגשר התקשורת לא נטען.'));
+            }, 20000);
+            window.addEventListener('message', onMessage);
+            try {
+                frame.contentWindow.postMessage({ type: 'getHTML', requestId }, '*');
+            } catch (error) {
+                finish(reject, new Error('לא ניתן לשלוח בקשת HTML ל־iframe: ' + error.message));
+            }
         });
 
-        // 3) איסוף CSS — fetch style.css + fonts-def.css + fonts-extended.css (אם נטען)
+        const renderedHtml = typeof rendered.html === 'string' ? rendered.html : '';
+        const pageCount = Number(rendered.pageCount) || 0;
+        if (!renderedHtml.trim() || pageCount < 1) {
+            throw new Error('ה־iframe השיב שאין בו עמודים מרונדרים. הרץ עימוד והמתן לסיום לפני הייצוא.');
+        }
+
+        let rendererDoc;
+        try {
+            rendererDoc = frame.contentDocument || frame.contentWindow.document;
+            if (!rendererDoc || !rendererDoc.documentElement) throw new Error('מסמך iframe אינו נגיש');
+        } catch (error) {
+            throw new Error('אין גישה למסמך ה־iframe (ייתכן שמדובר במקור cross-origin): ' + error.message);
+        }
+
+        const clone = rendererDoc.createElement('div');
+        clone.id = 'book-container';
+        clone.innerHTML = renderedHtml;
+        clone.removeAttribute('onclick');
+        clone.querySelectorAll('[onclick]').forEach(el => el.removeAttribute('onclick'));
+
+        // CSS ומשתני root נלקחים מהקשר הרינדור, ולא מממשק המשתמש הראשי.
         const cssFiles = ['style.css', 'fonts-def.css'];
-        const extLink = document.getElementById('fonts-extended-stylesheet');
+        const extLink = rendererDoc.getElementById('fonts-extended-stylesheet')
+            || document.getElementById('fonts-extended-stylesheet');
         if (extLink) cssFiles.push('fonts-extended.css');
 
+        const frameUrl = new URL(frame.src || document.baseURI, document.baseURI);
+        const appBaseUrl = new URL('.', frameUrl);
         const cssContents = [];
-        for (const file of cssFiles) {
+        for (const file of [...new Set(cssFiles)]) {
             try {
-                const res = await fetch(file);
-                if (res.ok) {
-                    const text = await res.text();
-                    cssContents.push(`/* === ${file} === */\n${text}`);
-                }
-            } catch (e) {
-                console.warn(`לא ניתן לטעון ${file}:`, e);
+                const res = await fetch(new URL(file, appBaseUrl));
+                if (res.ok) cssContents.push('/* === ' + file + ' === */\n' + await res.text());
+                else console.warn('ייצוא HTML: קובץ CSS לא נטען:', file, res.status);
+            } catch (error) {
+                console.warn('לא ניתן לטעון CSS לייצוא:', file, error);
             }
         }
 
-        // 3.5) הטמעת גופני העדיפות של עדכון_ממשק_9 כ-base64 — חיוני כדי שה-HTML
-        // המיוצא יציג את הגופנים נכון גם בלי תיקיית fonts/ לידו.
-        // רשימה זו כוללת את כל הגופנים שבשימוש ברירת המחדל של עדכון_ממשק_9
-        // (מתוך fonts-priority.json / fonts-def.css):
-        //   - Guttman Rashi (גוף הטקסט)
-        //   - AlphaBlack / Alpha / AlphaLight (כותרות 0, 2, 3, 4, 5, סימן)
-        //   - FrankReal (מילה ראשונה)
-        //   - Hadassah Friedlaender (כותרת 7 / הערות צד)
-        //   - Livorna (כותרות עליונות, שערים)
-        //   - David Libre / Frank Ruhl Libre / Noto Serif Hebrew (Google fallback)
-        // גם גופני Google נטענים דרך @import ב-style.css.
+        // הטמעת גופני העדיפות כ-base64 כדי שהקובץ יהיה עצמאי.
         const PRIORITY_FONT_FILES = [
-            'Guttman-Rashi-Normal.woff2',
-            'Guttman-Rashi-Bold.woff2',
-            'Alpha-Black.woff2',
-            'Alpha-Bold.woff2',
-            'Alpha-Regular.woff2',
-            'Alpha-Light.woff2',
-            'FrankReal-Bold.woff2',
-            'FrankReal-Regular.woff2',
-            'Hadassah-Friedlaender-Regular.woff2',
-            'Hadassah-Friedlaender-Bold.woff2',
-            'Livorna-Regular.woff2',
-            'Livorna-Bold.woff2',
-            'Livornabook-Regular.woff2'
+            'Guttman-Rashi-Normal.woff2', 'Guttman-Rashi-Bold.woff2',
+            'Alpha-Black.woff2', 'Alpha-Bold.woff2', 'Alpha-Regular.woff2', 'Alpha-Light.woff2',
+            'FrankReal-Bold.woff2', 'FrankReal-Regular.woff2',
+            'Hadassah-Friedlaender-Regular.woff2', 'Hadassah-Friedlaender-Bold.woff2',
+            'Livorna-Regular.woff2', 'Livorna-Bold.woff2', 'Livornabook-Regular.woff2'
         ];
         const embeddedFonts = [];
         for (const fontFile of PRIORITY_FONT_FILES) {
             try {
-                const res = await fetch('fonts/' + fontFile);
-                if (res.ok) {
-                    const blob = await res.blob();
+                const res = await fetch(new URL('fonts/' + fontFile, appBaseUrl));
+                if (!res.ok) continue;
+                const blob = await res.blob();
+                const base64 = await new Promise((resolve, reject) => {
                     const reader = new FileReader();
-                    const base64 = await new Promise((resolve, reject) => {
-                        reader.onload = () => resolve(reader.result);
-                        reader.onerror = reject;
-                        reader.readAsDataURL(blob);
-                    });
-                    embeddedFonts.push({ file: fontFile, base64 });
-                }
-            } catch (e) {
-                console.warn(`לא ניתן להטמיע ${fontFile}:`, e);
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = () => reject(reader.error || new Error('קריאת גופן נכשלה'));
+                    reader.readAsDataURL(blob);
+                });
+                embeddedFonts.push({ file: fontFile, base64 });
+            } catch (error) {
+                console.warn('לא ניתן להטמיע את הגופן:', fontFile, error);
             }
         }
-        if (embeddedFonts.length > 0) {
-            console.log(`exportRenderedHTML: הוטמעו ${embeddedFonts.length} גופנים`);
-        }
 
-        // 4) איסוף CSS variables מ-:root (computed) + inline styles שהוצבו ע"י JS
-        const rootStyle = getComputedStyle(document.documentElement);
+        // איסוף משתני CSS מה-root של ה-iframe.
+        const rootEl = rendererDoc.documentElement;
+        const rootStyle = frame.contentWindow.getComputedStyle(rootEl);
         const cssVars = [];
         const seenProps = new Set();
 
-        // א. אסוף inline styles מ-document.documentElement (הוצבו ע"י JS)
-        const rootEl = document.documentElement;
         for (let i = 0; i < rootEl.style.length; i++) {
             const prop = rootEl.style[i];
-            if (prop.startsWith('--')) {
-                const val = rootEl.style.getPropertyValue(prop).trim();
-                if (val) {
-                    cssVars.push(`${prop}: ${val};`);
-                    seenProps.add(prop);
-                }
+            if (!prop.startsWith('--')) continue;
+            const val = rootEl.style.getPropertyValue(prop).trim();
+            if (val) {
+                cssVars.push(prop + ': ' + val + ';');
+                seenProps.add(prop);
             }
         }
 
-        // ב. אסוף CSS variables מ-:root rules (רק אלה שלא הוצבו inline)
-        for (const sheet of document.styleSheets) {
+        for (const sheet of rendererDoc.styleSheets) {
             try {
                 for (const rule of sheet.cssRules) {
-                    if (rule.selectorText === ':root' && rule.style) {
-                        for (let i = 0; i < rule.style.length; i++) {
-                            const prop = rule.style[i];
-                            if (prop.startsWith('--') && !seenProps.has(prop)) {
-                                const val = rootStyle.getPropertyValue(prop).trim();
-                                if (val) {
-                                    cssVars.push(`${prop}: ${val};`);
-                                    seenProps.add(prop);
-                                }
-                            }
+                    if (rule.selectorText !== ':root' || !rule.style) continue;
+                    for (let i = 0; i < rule.style.length; i++) {
+                        const prop = rule.style[i];
+                        if (!prop.startsWith('--') || seenProps.has(prop)) continue;
+                        const val = rootStyle.getPropertyValue(prop).trim();
+                        if (val) {
+                            cssVars.push(prop + ': ' + val + ';');
+                            seenProps.add(prop);
                         }
                     }
                 }
-            } catch (e) {}
-        }
-
-        // 4.5) החלפת src ב-@font-face של גופני העדיפות עם base64
-        let cssText = cssContents.join('\n\n');
-        for (const { file, base64 } of embeddedFonts) {
-            const patterns = [
-                `url('fonts/${file}')`,
-                `url("fonts/${file}")`,
-                `url(fonts/${file})`
-            ];
-            for (const pat of patterns) {
-                cssText = cssText.split(pat).join(`url(${base64})`);
+            } catch (error) {
+                // גיליונות ממקור חיצוני עשויים לחסום קריאת cssRules.
             }
         }
 
-        // 5) בניית HTML עצמאי
-        const html = `<!DOCTYPE html>
-<html lang="he" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>מסמך מרונדר — ייצוא</title>
-<style>
-${cssText}
+        let cssText = cssContents.join('\n\n');
+        for (const { file, base64 } of embeddedFonts) {
+            const escapedFile = file.replace(/[.*+?^\${}()|[\]\\]/g, '\\$&');
+            const fontUrlPattern = new RegExp('url\\([\\s\\'"]*(?:\\.\\/)?(?:fonts\\/)?' + escapedFile + '[\\s\\'"]*\\)', 'g');
+            cssText = cssText.replace(fontUrlPattern, 'url("' + base64 + '")');
+        }
 
-/* === CSS Variables מהשורש (אחרי ה-CSS כדי לגבור על :root) === */
-:root {
-    ${cssVars.join('\n    ')}
-}
+        const html = '<!DOCTYPE html>\n' +
+'<html lang="he" dir="rtl">\n' +
+'<head>\n' +
+'<meta charset="UTF-8">\n' +
+'<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
+'<title>מסמך מרונדר — ייצוא</title>\n' +
+'<style>\n' +
+cssText + '\n' +
+':root {\n' + cssVars.join('\n') + '\n}\n' +
+'html, body { margin:0; padding:0; background:#334155; font-family:"Assistant",sans-serif; height:auto!important; min-height:100%!important; overflow:visible!important; }\n' +
+'body { padding:20px 0; }\n' +
+'#book-container { margin:0 auto; display:flex; flex-direction:column; align-items:center; will-change:auto!important; transition:none!important; }\n' +
+'.a4-page { margin:0 auto 25px!important; box-shadow:0 4px 20px rgba(0,0,0,.35)!important; background:#fff!important; transform:none!important; flex-shrink:0; }\n' +
+'@media print { @page { size:A4; margin:0; } html,body { background:#fff!important; padding:0!important; } .a4-page { page-break-after:always; break-after:page; margin:0!important; box-shadow:none!important; } .a4-page:last-child { page-break-after:auto; break-after:auto; } }\n' +
+'</style>\n' +
+'</head>\n' +
+'<body>\n' + clone.outerHTML + '\n' +
+'<script>if(document.fonts&&document.fonts.ready){document.fonts.ready.then(()=>{document.body.offsetHeight;});}</script>\n' +
+'</body>\n</html>';
 
-/* === סגנונות ייצוא — מציגים רק את הספר === */
-html, body {
-    margin: 0;
-    padding: 0;
-    background: #334155;
-    font-family: 'Assistant', sans-serif;
-    height: auto !important;
-    overflow: visible !important;
-}
-body {
-    padding: 20px 0;
-}
-#sidebar, #text-pane, #settings-pane, #resizer, #measuring-box {
-    display: none !important;
-}
-#preview-pane {
-    display: flex !important;
-    position: static !important;
-    height: auto !important;
-    max-height: none !important;
-    overflow: visible !important;
-    padding: 20px 0 !important;
-    float: none !important;
-    width: 100% !important;
-    flex: none !important;
-    background: #334155 !important;
-}
-#book-container {
-    margin: 0 auto;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    will-change: auto !important;
-    transition: none !important;
-}
-.a4-page {
-    margin: 0 auto 25px !important;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35) !important;
-    background: #ffffff !important;
-    transform: none !important;
-    flex-shrink: 0;
-}
-@media print {
-    .a4-page {
-        page-break-after: always;
-    }
-}
-</style>
-</head>
-<body>
-${clone.outerHTML}
-<script>
-if (document.fonts && document.fonts.ready) {
-    document.fonts.ready.then(() => {
-        document.body.offsetHeight;
-    });
-}
-</script>
-</body>
-</html>`;
-
-        // 6) הורדה — תיקון שגיאת תחביר שהייתה ב-v18 (Blob(tml] → Blob([html])
         const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -2005,24 +1960,22 @@ if (document.fonts && document.fonts.ready) {
         a.download = 'rendered-document.html';
         document.body.appendChild(a);
         a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
 
+        console.log('✓ HTML מרונדר יוצא:', pageCount, 'עמודים;', embeddedFonts.length, 'גופנים הוטמעו');
+        if (btn) btn.textContent = '✓ יוצא';
+    } catch (error) {
+        console.error('exportRenderedHTML נכשל:', error);
+        alert('ייצוא HTML נכשל: ' + error.message);
+        if (btn) btn.textContent = '💾 ייצוא HTML';
+    } finally {
         if (btn) {
-            btn.textContent = '✓ יוצא';
             setTimeout(() => {
                 btn.textContent = '💾 ייצוא HTML';
                 btn.disabled = false;
-            }, 2000);
+            }, 1800);
         }
-        console.log('✓ HTML מרונדר יוצא');
-    } catch (e) {
-        console.error('exportRenderedHTML נכשל:', e);
-        if (btn) {
-            btn.textContent = '💾 ייצוא HTML';
-            btn.disabled = false;
-        }
-        alert('ייצוא HTML נכשל: ' + e.message);
     }
 }
 window.exportRenderedHTML = exportRenderedHTML;
