@@ -1926,11 +1926,16 @@ async function exportRenderedHTML() {
             }
         }
 
-        let cssText = cssContents.join('\n\n');
-        for (const { file, base64 } of embeddedFonts) {
-            const escapedFile = file.replace(/[.*+?^\${}()|[\]\\]/g, '\\$&');
-            const fontUrlPattern = new RegExp('url\\([\\s\\'"]*(?:\\.\\/)?(?:fonts\\/)?' + escapedFile + '[\\s\\'"]*\\)', 'g');
-            cssText = cssText.replace(fontUrlPattern, 'url("' + base64 + '")');
+        let cssText = cssContents.join('\\n\\n');
+        for (const font of embeddedFonts) {
+            const file = font.file;
+            const dataUrl = 'url("' + font.base64 + '")';
+            cssText = cssText.split("url('fonts/" + file + "')").join(dataUrl);
+            cssText = cssText.split('url("fonts/' + file + '")').join(dataUrl);
+            cssText = cssText.split('url(fonts/' + file + ')').join(dataUrl);
+            cssText = cssText.split("url('./fonts/" + file + "')").join(dataUrl);
+            cssText = cssText.split('url("./fonts/' + file + '")').join(dataUrl);
+            cssText = cssText.split('url(./fonts/' + file + ')').join(dataUrl);
         }
 
         const html = '<!DOCTYPE html>\n' +
