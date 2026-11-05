@@ -22,7 +22,7 @@ for (let i = 0; i < argv.length; i++) {
     if (v === '--root') o.root = path.resolve(argv[++i]);
     else if (v === '--text') o.text = argv[++i];
     else if (v === '--lines') o.lines = parseInt(argv[++i], 10);
-    else if (v === '--audit') o.audit = path.resolve(argv[++i]);
+    else if (v === '--audit') o.audit = argv[++i].split(',').filter(Boolean).map(p => path.resolve(p));
     else if (v === '--top') o.top = parseInt(argv[++i], 10);
     else if (v === '--kind') o.kinds = String(argv[++i]).split(',').filter(Boolean);
     else if (v === '--chrome') o.chrome = argv[++i];
@@ -103,7 +103,7 @@ try {
     const page = await browser.newPage();
     page.on('pageerror', e => console.error('[pageerror]', String(e).slice(0, 160)));
     await page.goto(`http://127.0.0.1:${port}/renderer.html`, { waitUntil: 'load' });
-    if (o.audit) await page.addScriptTag({ path: o.audit });
+    if (o.audit) for (const f of o.audit) await page.addScriptTag({ path: f });
     await page.waitForFunction(() => typeof window.typesetDocument === 'function' && !!window.__geomAudit && !!window.EngineTrace, { timeout: 60000 });
     const typeset = trace => page.evaluate(async (tx, st, withTrace, fpSrc) => {
         const fpFn = eval('(' + fpSrc + ')');

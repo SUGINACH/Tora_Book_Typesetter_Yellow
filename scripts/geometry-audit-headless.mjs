@@ -8,12 +8,11 @@
          [--settings default_settings.json]   קובץ הגדרות (ברירת מחדל: default_settings.json)
          [--out geometry.json]                קובץ הפלט (ברירת מחדל: geometry-headless.json)
          [--words]                            לכלול מילים/רווחים (קובץ גדול בהרבה; הבודק לא צריך אותם)
-         [--check]                            להריץ אחר כך את scripts/geometry-audit-cli.js על הפלט */
+         [--check]                            להריץ את בדיקת הגיאומטריה בדף ולהדפיס סיכום */
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = { text: null, settings: path.join(ROOT, 'default_settings.json'), out: 'geometry-headless.json', words: false, check: false, chrome: null };
@@ -82,6 +81,7 @@ try {
     if (rd.type !== 'render-done') throw new Error('העימוד נכשל: ' + JSON.stringify(rd).slice(0, 200));
     console.log(`עימוד: ${rd.pageCount} עמודים ב-${Date.now() - t0}ms`);
 
+    const auditSummary = args.check ? await page.evaluate(() => window.__geomAudit.audit(window.__geomAudit.extract()).summary) : null;
     const model = await page.evaluate(keepWords => {
         window.scrollTo({ top: 0, behavior: 'instant' });
         const m = window.__geomAudit.extract();
@@ -90,13 +90,8 @@ try {
     }, args.words);
     fs.writeFileSync(args.out, JSON.stringify(model));
     console.log(`נכתב ${args.out} (${(fs.statSync(args.out).size / 1048576).toFixed(1)}MB, ${model.pages.length} עמודים)`);
+    if (auditSummary) console.log('סיכום בדיקת הגיאומטריה:', JSON.stringify(auditSummary));
 } finally {
     await browser.close();
     server.close();
-}
-
-if (args.check) {
-    const cli = path.join(ROOT, 'scripts', 'geometry-audit-cli.js');
-    const r = spawnSync(process.execPath, [cli, args.out], { stdio: 'inherit' });
-    process.exitCode = r.status || 0;
 }

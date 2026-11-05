@@ -30,6 +30,10 @@
         flushFootnotesInto: { geo: true },
         flushEndnotesForPart: { geo: true },
         applyCrossParagraphParens: { geo: true },
+        repositionOverflowingSideNotes: { geo: true },
+        columnStretchCapacity: { geo: false },     // החלטות קיבולת: למה מתיחה/כיווץ נעצרו
+        columnCompressCapacity: { geo: false },
+        getJustifyCapacityAudit: { geo: false },
         resolveParagraphSplit: { geo: false },
         computeBestFitLine: { geo: false }
     };

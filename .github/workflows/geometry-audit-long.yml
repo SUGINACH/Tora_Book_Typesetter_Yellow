@@ -1,0 +1,86 @@
+name: Geometry audit long document
+
+concurrency:
+  group: geometry-audit-long-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [V22]
+    paths:
+      - 'typesetter.js'
+      - 'style.css'
+      - 'decorations.js'
+      - 'app.js'
+      - 'index.html'
+      - 'default_settings.json'
+      - 'geometry-audit.js'
+      - 'renderer-bridge.js'
+      - 'tools/geometry-audit-cli.js'
+      - 'very_long_test_text.txt'
+      - 'package.json'
+      - '.github/workflows/geometry-audit-long.yml'
+  workflow_dispatch:
+
+jobs:
+  geometry-audit-long:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax-check geometry audit CLI
+        run: node --check tools/geometry-audit-cli.js
+      - name: Install dependencies
+        run: npm install
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Verify long input
+        run: |
+          test -s ./very_long_test_text.txt
+          wc -c ./very_long_test_text.txt
+      - name: Run long-document geometry audit
+        run: npm run audit:geometry:long -- --fail-on high --repeat-check --require-note-marker-line-diagnostics
+      - name: Assert terminal residual fallbacks do not leave sparse last lines
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync('./artifacts/geometry-audit.json', 'utf8'));
+          const records = report.geometry?.layoutDecisionRecords || [];
+          const residuals = records.filter(record =>
+            record.decision?.selection?.fallback === 'full-width-terminal-residual');
+          const unresolved = residuals.filter(record =>
+            record.decision?.selection?.fallbackSparseLine === 'unresolved');
+          const sparseFallbacks = (report.audit?.issues || []).filter(issue =>
+            issue.kind === 'sparse-line' &&
+            issue.balanceFallback === 'full-width-terminal-residual');
+          if (unresolved.length || sparseFallbacks.length) {
+            console.error('A full-width terminal residual still has a sparse final line or an unresolved density decision.', {
+              unresolved: unresolved.map(record => ({
+                pageLabel: record.pageLabel,
+                selection: record.decision?.selection
+              })),
+              sparseFallbacks
+            });
+            process.exit(1);
+          }
+          console.log(JSON.stringify({
+            terminalResidualFallbacks: residuals.length,
+            sparseLineCorrections: residuals.filter(record =>
+              record.decision?.selection?.fallbackSparseLine === 'corrected').length,
+            sparseLineGate: 'PASS'
+          }));
+          NODE
+      - name: Upload long-document audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geometry-audit-long-report
+          path: |
+            artifacts/geometry-audit.json
+            artifacts/geometry-audit-summary.md
+          if-no-files-found: warn

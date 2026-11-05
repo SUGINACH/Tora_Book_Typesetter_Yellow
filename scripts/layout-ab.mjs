@@ -20,7 +20,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const o = { a: null, b: null, text: null, lines: 1500, variants: 5, audit: null, chrome: null, json: null, selftest: false, warmup: true };
+const o = { a: null, b: null, text: null, lines: 1500, variants: 5, audit: null, chrome: null, json: null, selftest: false, warmup: true, save: null };
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
     const v = argv[i];
@@ -29,10 +29,11 @@ for (let i = 0; i < argv.length; i++) {
     else if (v === '--text') o.text = argv[++i];
     else if (v === '--lines') o.lines = parseInt(argv[++i], 10);
     else if (v === '--variants') o.variants = parseInt(argv[++i], 10);
-    else if (v === '--audit') o.audit = path.resolve(argv[++i]);
+    else if (v === '--audit') o.audit = argv[++i].split(',').filter(Boolean).map(p => path.resolve(p));   // כמה קבצים: geometry-audit.js,geometry-audit-extra.js
     else if (v === '--chrome') o.chrome = argv[++i];
     else if (v === '--json') o.json = argv[++i];
     else if (v === '--selftest') o.selftest = true;
+    else if (v === '--save') o.save = argv[++i];   // שומר תוצאות (כולל טביעות אצבע) ל-<prefix>.A.json / .B.json, להשוואה מאוחרת עם layout-ab-compare.mjs
     else if (v === '--no-warmup') o.warmup = false;   // לבדוק שהמנוע מתייצב בעצמו (שלב 1) בלי חימום חיצוני
 }
 if (!o.a || !o.text) { console.error('שימוש: node scripts/layout-ab.mjs --a <תיקייה> [--b <תיקייה>] --text <קובץ> [--lines N] [--variants N] [--audit file] [--json out]'); process.exit(2); }
@@ -101,7 +102,7 @@ async function runTree(browser, root, plan) {
     const page = await browser.newPage();
     page.on('pageerror', e => console.error('[pageerror]', String(e).slice(0, 160)));
     await page.goto(`http://127.0.0.1:${port}/renderer.html`, { waitUntil: 'load' });
-    if (o.audit) await page.addScriptTag({ path: o.audit });
+    if (o.audit) for (const f of o.audit) await page.addScriptTag({ path: f });
     await page.waitForFunction(() => typeof window.typesetDocument === 'function' && !!window.__geomAudit, { timeout: 60000 });
     await page.evaluate(async f => { await Promise.all(f.map(n => document.fonts.load(`16px "${n}"`).catch(() => []))); await document.fonts.ready; }, [...fams]);
     /* חימום גופנים: הגופנים שהמנוע צריך נטענים באמצע ההרצה הראשונה (נמדד: Alpha, Livorna ו-FrankReal bold),
@@ -137,7 +138,7 @@ async function runTree(browser, root, plan) {
             return { ok: done.type === 'render-done', report: done.report || null, lateFonts: loadedNow() - fontsBefore, pages: fp.length, ms, issues: a.summary.total, high: a.summary.high, byKind: a.summary.byKind, top, fp };
         }, v.text, Object.assign({}, settings, v.set), fpFn.toString());
         out.push({ name: v.name, ...r });
-        console.error(`  [${path.basename(root)}] ${v.name}: ${r.pages} עמודים, ${r.issues} ממצאים, ${(r.ms / 1000).toFixed(1)}s${r.report ? '  [passes=' + r.report.passes + (r.report.lateFonts.length ? ' late=' + r.report.lateFonts.length : '') + ']' : ''}${r.lateFonts && !(r.report && r.report.passes > 1) ? '  ⚠ נטענו ' + r.lateFonts + ' גופנים באמצע המדידה' : ''}`);
+        console.error(`  [${path.basename(root)}] ${v.name}: ${r.pages} עמודים, ${r.issues} ממצאים, ${(r.ms / 1000).toFixed(1)}s${r.report ? '  [passes=' + r.report.passes + (r.report.lateFonts.length ? ' late=' + r.report.lateFonts.length : '') + ']' : ''}${r.lateFonts && !r.report ? '  ⚠ נטענו ' + r.lateFonts + ' גופנים באמצע המדידה' : ''}`);
     }
     await page.close(); server.close();
     return out;
@@ -161,6 +162,7 @@ try {
     if (o.b) resB = await runTree(browser, o.b, PLAN);
 } finally { await browser.close(); }
 
+if (o.save) { fs.writeFileSync(o.save + '.A.json', JSON.stringify(resA)); if (resB) fs.writeFileSync(o.save + '.B.json', JSON.stringify(resB)); }
 const sum = (rs, f) => rs.reduce((s, r) => s + f(r), 0);
 const inputsLine = r => r && r.report && r.report.settingsUsedHash ? `טקסט ${r.report.textHash} | הגדרות(${r.report.settingsUsedCount}) ${r.report.settingsUsedHash} | גופנים(${r.report.fontCount}) ${r.report.fontsHash} | css ${r.report.cssVarsHash}${r.report.settingsMissing.length ? ' | חסרות: ' + r.report.settingsMissing.join(',') : ''}${r.report.derivedChanged.length ? ' | המנוע כתב לפקדים: ' + r.report.derivedChanged.join(',') : ''}` : null;
 for (const [nm, rs] of [['A', resA], ['B', resB]]) { const l = rs && inputsLine(rs[0]); if (l) console.log(`קלטים ${nm} (בסיס): ${l}`); }
@@ -170,7 +172,7 @@ if (resB) resA.forEach((ra, i) => { const x = ra.report, y = resB[i].report; if 
 for (const [nm, rs] of [['A', resA], ['B', resB]]) {
     if (!rs) continue;
     if (rs.warm.lateFonts.length && rs.warm.firstRunDiffers) console.log(`⚠ ${nm}: גופנים שנטענו באמצע ההרצה הראשונה: ${rs.warm.lateFonts.join(', ')}${rs.warm.firstRunDiffers ? ' — והפריסה של ההרצה הראשונה שונה מהמצב היציב' : ''}. המדידות כאן אחרי חימום.`);
-    const dirty = rs.filter(r => r.lateFonts && !(r.report && r.report.passes > 1)).map(r => r.name);
+    const dirty = rs.filter(r => r.lateFonts && !r.report).map(r => r.name);   // עם דוח מנוע (EngineInputs) הגופנים מטופלים בתוך המנוע
     if (dirty.length) console.log(`⚠ ${nm}: נטענו גופנים נוספים באמצע המדידה בוריאנטים: ${dirty.join(', ')} — התוצאות שלהם לא יציבות`);
 }
 const kinds = new Set(); [resA, resB].filter(Boolean).forEach(rs => rs.forEach(r => Object.keys(r.byKind).forEach(k => kinds.add(k))));

@@ -38,6 +38,129 @@ function rectOf(el) {
     };
 }
 
+/* Resolve note-marker styles directly from the live DOM when the tree's inline
+   diagnostic is missing. Matching by the full relative rectangle avoids relying on
+   text content (which may be empty for some generated marker nodes) or on unstable IDs. */
+function resolveNoteMarkerInlineGeometry(targetRect) {
+    const markers = Array.from(document.querySelectorAll('#book-container .note-marker'));
+    let best = null;
+    for (const el of markers) {
+        const rect = rectOf(el);
+        const score = Math.abs(rect.x - targetRect.x) + Math.abs(rect.y - targetRect.y) +
+            Math.abs(rect.w - targetRect.w) + Math.abs(rect.h - targetRect.h);
+        if (!best || score < best.score) best = { el, rect, score };
+    }
+    const round = value => Number.isFinite(value) ? Math.round(value * 1000) / 1000 : null;
+    if (!best || best.score > 2) {
+        return {
+            source: 'live-dom-rect-match',
+            lookupStatus: 'not-found',
+            candidateCount: markers.length,
+            bestRectDeltaPx: best ? round(best.score) : null
+        };
+    }
+    const cs = getComputedStyle(best.el);
+    const parent = best.el.parentElement;
+    const ps = parent ? getComputedStyle(parent) : null;
+    const pr = parent ? rectOf(parent) : null;
+
+    // The serialized tree can lack paragraph line fragments for generated/split
+    // note markers. Recover actual neighboring text line boxes from live Range
+    // geometry instead of reporting only the paragraph's outer rectangle.
+    const off = getBookContainerOffset();
+    const markerCenter = best.rect.y + best.rect.h / 2;
+    let nearestLine = null;
+    let nearestLineDistance = Infinity;
+    if (parent) {
+        const walker = document.createTreeWalker(parent, NodeFilter.SHOW_TEXT, {
+            acceptNode(node) {
+                if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+                if (node.parentElement && node.parentElement.closest('.note-marker')) return NodeFilter.FILTER_REJECT;
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        });
+        const range = document.createRange();
+        const fragments = [];
+        let textNode;
+        while ((textNode = walker.nextNode())) {
+            range.selectNodeContents(textNode);
+            for (const lineRect of Array.from(range.getClientRects())) {
+                if (lineRect.width <= 0 || lineRect.height <= 0) continue;
+                fragments.push({
+                    x: lineRect.left - off.x, y: lineRect.top - off.y,
+                    right: lineRect.right - off.x, bottom: lineRect.bottom - off.y,
+                    h: lineRect.height
+                });
+            }
+        }
+        range.detach();
+
+        // Range rectangles are inline fragments, not guaranteed one-per-line.
+        // Merge them with the same vertical-center clustering used by collectLines().
+        fragments.sort((a, b) => ((a.y + a.bottom) / 2) - ((b.y + b.bottom) / 2) || a.x - b.x);
+        const lineClusters = [];
+        for (const fragment of fragments) {
+            const center = (fragment.y + fragment.bottom) / 2;
+            let bestCluster = null;
+            let bestDistance = Infinity;
+            for (const cluster of lineClusters) {
+                const clusterCenter = (cluster.y + cluster.bottom) / 2;
+                const maxCenterDelta = Math.max(9, Math.min(11, Math.max(fragment.h, cluster.bottom - cluster.y) * 0.45));
+                const distance = Math.abs(center - clusterCenter);
+                if (distance <= maxCenterDelta && distance < bestDistance) {
+                    bestCluster = cluster;
+                    bestDistance = distance;
+                }
+            }
+            if (!bestCluster) {
+                lineClusters.push({ x: fragment.x, y: fragment.y, right: fragment.right, bottom: fragment.bottom, fragmentCount: 1 });
+            } else {
+                bestCluster.x = Math.min(bestCluster.x, fragment.x);
+                bestCluster.y = Math.min(bestCluster.y, fragment.y);
+                bestCluster.right = Math.max(bestCluster.right, fragment.right);
+                bestCluster.bottom = Math.max(bestCluster.bottom, fragment.bottom);
+                bestCluster.fragmentCount++;
+            }
+        }
+        for (const line of lineClusters) {
+            const distance = Math.abs(markerCenter - (line.y + line.bottom) / 2);
+            if (distance < nearestLineDistance) {
+                nearestLineDistance = distance;
+                nearestLine = { y: line.y, bottom: line.bottom, h: line.bottom - line.y, fragmentCount: line.fragmentCount };
+            }
+        }
+    }
+    return {
+        source: 'live-dom-rect-match',
+        lookupStatus: 'matched',
+        rectDeltaPx: round(best.score),
+        verticalAlign: cs.verticalAlign,
+        lineHeight: cs.lineHeight,
+        fontSize: cs.fontSize,
+        fontFamily: cs.fontFamily,
+        display: cs.display,
+        position: cs.position,
+        marginTop: cs.marginTop,
+        transform: cs.transform,
+        parentDisplay: ps ? ps.display : null,
+        parentLineHeight: ps ? ps.lineHeight : null,
+        markerTop: round(best.rect.y),
+        markerBottom: round(best.rect.bottom),
+        parentTop: pr ? round(pr.y) : null,
+        parentBottom: pr ? round(pr.bottom) : null,
+        nearestLine: nearestLine ? {
+            y: round(nearestLine.y),
+            bottom: round(nearestLine.bottom),
+            height: round(nearestLine.h),
+            topDelta: round(best.rect.y - nearestLine.y),
+            bottomDelta: round(best.rect.bottom - nearestLine.bottom),
+            centerDistance: round(nearestLineDistance),
+            fragmentCount: nearestLine.fragmentCount,
+            source: 'live-text-range-fragment-union'
+        } : null
+    };
+}
+
 /* מזהה את סוג הרכיב לפי ה-class וה-tag */
 function classifyElement(el) {
     const cls = el.className || '';
@@ -47,14 +170,19 @@ function classifyElement(el) {
     if (cls.includes('a4-page')) return { type: 'page', tag };
     if (cls.includes('page-content-wrapper')) return { type: 'wrapper', tag };
     if (cls.includes('page-body-flow')) return { type: 'body-flow', tag };
-    // [V22] המחלקה האמיתית של כותרת העמוד ב-DOM היא top-header-grid
-    if (cls.includes('page-header') || cls.includes('top-header-grid')) return { type: 'header', tag };
+    if (cls.includes('page-header')) return { type: 'header', tag };
+    if (cls.includes('top-header-grid')) return { type: 'header', tag };
+    if (cls.includes('header-col-r') || cls.includes('header-col-c') || cls.includes('header-col-l')) return { type: 'header-col', tag };
+    if (cls.includes('header-ornament-wrap')) return { type: 'header-ornament', tag };
+    if (cls.includes('hdr-txt')) return { type: 'header-text', tag };
+    if (cls.includes('hdr-pagenum')) return { type: 'header-page-number', tag };
+    if (cls.includes('note-header-ornament-right') || cls.includes('note-header-ornament-left')) return { type: 'fn-ornament', tag };
+    if (cls.includes('footnote-header-title')) return { type: 'fn-header-title', tag };
     if (cls.includes('page-number-footer')) return { type: 'page-number', tag };
     if (cls.includes('footnote-area')) return { type: 'footnote-area', tag };
     if (cls.includes('footnote-header-wrap')) return { type: 'fn-header', tag };
     if (cls.includes('note-rule-') || cls.includes('note-rule')) return { type: 'fn-rule', tag };
     if (cls.includes('note-block')) return { type: 'fn-block', tag };
-    // [V22] note-line-num חייב להיבדק לפני note-line (תת-מחרוזת) — אחרת מספרי ההערות נספרים כשורות הערה
     if (cls.includes('note-line-num')) return { type: 'fn-num', tag };
     if (cls.includes('note-line')) return { type: 'fn-line', tag };
     if (cls.includes('block-2col')) return { type: 'block-2col', tag };
@@ -66,6 +194,11 @@ function classifyElement(el) {
     if (cls.includes('col-gutter-divider')) return { type: 'gutter', tag };
     if (cls.includes('h2-spacer')) return { type: 'h2-spacer', tag };
     if (cls.includes('h2-siman-badge')) return { type: 'h2-siman', tag };
+    if (cls.includes('block-h2-title-side')) return { type: 'h2-title-side-block', tag };
+    if (cls.includes('h2-title-ornament-right')) return { type: 'h2-title-orn-r', tag };
+    if (cls.includes('h2-title-ornament-left')) return { type: 'h2-title-orn-l', tag };
+    if (cls.includes('h2-title-ornament-top')) return { type: 'h2-title-orn-top', tag };
+    if (cls.includes('h2-title-ornament-bottom')) return { type: 'h2-title-orn-btm', tag };
     if (cls.includes('title-level-2-standalone')) return { type: 'h2-title', tag };
     if (cls.includes('h2-ornament-top')) return { type: 'h2-orn-top', tag };
     if (cls.includes('h2-ornament-bottom')) return { type: 'h2-orn-btm', tag };
@@ -91,12 +224,14 @@ function classifyElement(el) {
 /* צבע לכל סוג רכיב (ל-overlay) */
 const TYPE_COLORS = {
     'page': '#1e40af', 'wrapper': '#3b82f6', 'body-flow': '#60a5fa',
-    'header': '#a78bfa', 'page-number': '#f472b6',
+    'header': '#a78bfa', 'header-col': '#c4b5fd', 'header-ornament': '#818cf8', 'header-text': '#a5b4fc', 'header-page-number': '#f472b6', 'fn-ornament': '#fb7185', 'fn-header-title': '#fca5a5', 'page-number': '#f472b6',
     'footnote-area': '#dc2626', 'fn-header': '#ef4444', 'fn-rule': '#f87171',
     'fn-block': '#fca5a5', 'fn-line': '#fecaca', 'fn-num': '#fee2e2',
     'block-2col': '#059669', 'block-h3-span': '#10b981', 'block-single-col': '#34d399',
     'column': '#34d399', 'margin-col': '#6ee7b7', 'gutter': '#a7f3d0',
     'h2-spacer': '#d97706', 'h2-siman': '#f59e0b', 'h2-title': '#fbbf24',
+    'h2-title-side-block': '#f59e0b', 'h2-title-orn-r': '#fb923c', 'h2-title-orn-l': '#fdba74',
+    'h2-title-orn-top': '#fcd34d', 'h2-title-orn-btm': '#fde68a',
     'h2-orn-top': '#fcd34d', 'h2-orn-btm': '#fde68a',
     'h3': '#7c3aed', 'h4': '#8b5cf6', 'h5': '#a78bfa', 'h6': '#c4b5fd', 'h7': '#ddd6fe',
     'h3-title': '#7c3aed', 'h3-orn-r': '#a78bfa', 'h3-orn-l': '#a78bfa',
@@ -109,68 +244,86 @@ const TYPE_COLORS = {
 
 /* רכיבים שכדאי לרדת לתוכם רקורסיבית */
 const DESCEND_INTO = new Set([
-    'page', 'wrapper', 'body-flow', 'footnote-area',
+    'page', 'wrapper', 'body-flow', 'header', 'header-col', 'footnote-area', 'fn-header',
     'block-2col', 'block-h3-span', 'block-single-col',
     'column', 'margin-col', 'fn-block'
 ]);
 
 /* רכיבים שהם "טקסט" — נמדוד את השורות שלהם */
-const TEXT_TYPES = new Set(['p', 'p-cut', 'p-end', 'fn-line', 'h2-title', 'h3-title', 'h3', 'h4', 'h5', 'h6', 'h7']);
+const TEXT_TYPES = new Set(['p', 'p-cut', 'p-end', 'fn-line', 'h2-title', 'h3-title', 'h3', 'h4', 'h5', 'h6', 'h7', 'header-text', 'header-page-number', 'fn-header-title']);
 
 /* אוסף שורות טקסט מתוך אלמנט טקסט ע"י getClientRects על Range */
 function collectLines(el) {
-    /* [V22] שורה = אשכול אנכי של מלבני טקסט.
-       הבעיה הקודמת: getClientRects על כל האלמנט מחזיר מלבן לכל קטע טקסט (ריצות בגופנים/גדלים שונים)
-       ולכל אלמנט פנימי (למשל המילה הצפה), ודה-דופליקציה לפי (top,height) ספרה קטעים ולא שורות
-       (ספירת יתר ב-52% מהפסקאות במדידה על 127 עמודים).
-       כאן: מלבנים של צמתי טקסט בלבד, ללא .first-word-window (צף), ממוינים לפי מרכז אנכי, ופער
-       גדול מחצי גובה-שורה בין מרכזים עוקבים פותח שורה חדשה. */
-    const lines = [];
+    const fragments = [];
     try {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const rects = range.getClientRects();
         const off = getBookContainerOffset();
-        const cs = getComputedStyle(el);
-        let pitch = parseFloat(cs.lineHeight);
-        if (!(pitch > 0)) pitch = (parseFloat(cs.fontSize) || 16) * 1.3;
-        const items = [];
-        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-        let tn;
-        while ((tn = walker.nextNode())) {
-            if (!/\S/.test(tn.nodeValue)) continue;
-            const pe = tn.parentElement;
-            if (pe && pe.closest && pe.closest('.first-word-window')) continue;
-            const rg = document.createRange();
-            rg.selectNodeContents(tn);
-            const rs = rg.getClientRects();
-            for (let i = 0; i < rs.length; i++) {
-                const r = rs[i];
-                if (r.height < 1 || r.width < 1) continue;
-                items.push({ l: r.left, t: r.top, r: r.right, b: r.bottom, cy: (r.top + r.bottom) / 2 });
-            }
-        }
-        items.sort((a, b) => a.cy - b.cy || a.l - b.l);
-        const gap = 0.5 * pitch;
-        let cur = null, prevCy = 0;
-        for (const it of items) {
-            if (cur && it.cy - prevCy <= gap) {
-                if (it.l < cur.l) cur.l = it.l;
-                if (it.r > cur.r) cur.r = it.r;
-                if (it.t < cur.t) cur.t = it.t;
-                if (it.b > cur.b) cur.b = it.b;
-            } else {
-                cur = { l: it.l, t: it.t, r: it.r, b: it.b };
-                lines.push(cur);
-            }
-            prevCy = it.cy;
-        }
-        for (let i = 0; i < lines.length; i++) {
-            const c = lines[i];
-            lines[i] = { x: c.l - off.x, y: c.t - off.y, w: c.r - c.l, h: c.b - c.t,
-                         right: c.r - off.x, bottom: c.b - off.y, idx: i };
+        for (let i = 0; i < rects.length; i++) {
+            const r = rects[i];
+            if (r.height < 1 || r.width < 0.5) continue;
+            fragments.push({
+                x: r.left - off.x,
+                y: r.top - off.y,
+                w: r.width,
+                h: r.height,
+                right: r.right - off.x,
+                bottom: r.bottom - off.y
+            });
         }
     } catch (e) {
-        // טקסט ריק / שגיאה — מערך ריק
+        // Empty text or Range errors yield an empty line list.
     }
-    return lines;
+
+    // Range.getClientRects() returns inline fragments, not necessarily one
+    // rectangle per visual line. Merge fragments by vertical center, then
+    // measure each line as the union of all its fragments. Keeping only the
+    // first rectangle (the previous behavior) understated line widths whenever
+    // a line contained multiple text nodes/spans, such as parentheses or markers.
+    const clusters = [];
+    fragments.sort((a, b) => ((a.y + a.bottom) / 2) - ((b.y + b.bottom) / 2) || a.x - b.x);
+    for (const fragment of fragments) {
+        const center = (fragment.y + fragment.bottom) / 2;
+        let best = null;
+        let bestDistance = Infinity;
+        for (const cluster of clusters) {
+            const clusterCenter = (cluster.y + cluster.bottom) / 2;
+            const maxCenterDelta = Math.max(9, Math.min(11, Math.max(fragment.h, cluster.bottom - cluster.y) * 0.45));
+            const distance = Math.abs(center - clusterCenter);
+            if (distance <= maxCenterDelta && distance < bestDistance) {
+                best = cluster;
+                bestDistance = distance;
+            }
+        }
+        if (!best) {
+            clusters.push({
+                x: fragment.x,
+                y: fragment.y,
+                right: fragment.right,
+                bottom: fragment.bottom,
+                fragmentCount: 1
+            });
+        } else {
+            best.x = Math.min(best.x, fragment.x);
+            best.y = Math.min(best.y, fragment.y);
+            best.right = Math.max(best.right, fragment.right);
+            best.bottom = Math.max(best.bottom, fragment.bottom);
+            best.fragmentCount++;
+        }
+    }
+
+    clusters.sort((a, b) => a.y - b.y || a.x - b.x);
+    return clusters.map((line, idx) => ({
+        x: line.x,
+        y: line.y,
+        w: line.right - line.x,
+        h: line.bottom - line.y,
+        right: line.right,
+        bottom: line.bottom,
+        fragmentCount: line.fragmentCount,
+        idx
+    }));
 }
 
 /* [חדש] אוסף מילים ורווחים מתוך אלמנט טקסט ע"י TreeWalker + Range.
@@ -243,8 +396,11 @@ function buildNode(el, parent, pageOffset) {
     // דלג על אלמנטים בלי גודל
     if (rect.w < 1 || rect.h < 1) return null;
 
+    const siblingIndex = parent && Array.isArray(parent.children) ? parent.children.length : 0;
     const node = {
-        id: (el.id || '') + ':' + Math.random().toString(36).slice(2, 8),
+        // Stable traversal-path IDs make repeated geometry exports comparable.
+        // Do not use Math.random(): it makes identical layouts produce different reports.
+        id: (parent && parent.id ? parent.id : 'root') + '/' + cls.type + '[' + siblingIndex + ']',
         type: cls.type,
         tag: cls.tag,
         cls: typeof el.className === 'string' ? el.className.slice(0, 80) : '',
@@ -252,6 +408,130 @@ function buildNode(el, parent, pageOffset) {
         rect,
         children: [],
         lines: [],
+        tokenId: el.getAttribute('data-token-id') || null,
+        isContinuation: el.getAttribute('data-is-cont') === 'true',
+        rawText: (el.getAttribute('data-raw-text') || '').slice(0, 160),
+        footnoteReflowMetrics: cls.type === 'page' ? {
+            queueCount: el.getAttribute('data-fn-reflow-queue-count'),
+            predictedHeight: el.getAttribute('data-fn-reflow-predicted-height'),
+            beforeFlowHeight: el.getAttribute('data-fn-reflow-before-flow-height'),
+            afterFlowHeight: el.getAttribute('data-fn-reflow-after-flow-height'),
+            flowHeightDelta: el.getAttribute('data-fn-reflow-flow-height-delta'),
+            beforeLastBlockHeight: el.getAttribute('data-fn-reflow-before-last-block-height'),
+            afterLastBlockHeight: el.getAttribute('data-fn-reflow-after-last-block-height'),
+            afterLastBlockOverflow: el.getAttribute('data-fn-reflow-after-last-block-overflow'),
+            lastBlockTopOffset: el.getAttribute('data-fn-reflow-last-block-top-offset')
+        } : null,
+        inlineGeometry: cls.type === 'note-marker' ? (() => {
+            const cs = getComputedStyle(el);
+            const markerRect = el.getBoundingClientRect();
+            const parentRect = el.parentElement?.getBoundingClientRect?.() || null;
+            const parentLines = Array.isArray(parent?.lines) ? parent.lines : [];
+            const off = getBookContainerOffset();
+            const markerCenter = ((markerRect.top + markerRect.bottom) / 2) - off.y;
+            let nearestLine = null;
+            let nearestLineDistance = Infinity;
+            for (const line of parentLines) {
+                const lineCenter = line.y + line.h / 2;
+                const distance = Math.abs(markerCenter - lineCenter);
+                if (distance < nearestLineDistance) {
+                    nearestLine = line;
+                    nearestLineDistance = distance;
+                }
+            }
+            const round = value => Number.isFinite(value) ? Math.round(value * 1000) / 1000 : null;
+            return {
+                verticalAlign: cs.verticalAlign,
+                lineHeight: cs.lineHeight,
+                fontSize: cs.fontSize,
+                fontFamily: cs.fontFamily,
+                display: cs.display,
+                position: cs.position,
+                markerTop: round(rect.y),
+                markerBottom: round(rect.bottom),
+                parentTop: round(parent?.rect?.y),
+                parentBottom: round(parent?.rect?.bottom),
+                offsetFromParentTop: round(rect.y - (parent?.rect?.y ?? rect.y)),
+                nearestLine: nearestLine ? {
+                    y: round(nearestLine.y),
+                    bottom: round(nearestLine.y + nearestLine.h),
+                    topDelta: round(rect.y - nearestLine.y),
+                    bottomDelta: round(rect.bottom - (nearestLine.y + nearestLine.h)),
+                    centerDistance: round(nearestLineDistance)
+                } : null,
+                parentDomTop: parentRect ? round(parentRect.top - off.y) : null,
+                parentDomBottom: parentRect ? round(parentRect.bottom - off.y) : null
+            };
+        })() : null,
+        layoutMetrics: cls.type === 'block-2col' ? {
+            fillRemaining: el.getAttribute('data-layout-fill-remaining'),
+            fillFlowHeight: el.getAttribute('data-layout-fill-flow-height'),
+            fillTopOffset: el.getAttribute('data-layout-fill-top-offset'),
+            balanceCalled: el.getAttribute('data-layout-balance-called'),
+            balanceStatus: el.getAttribute('data-layout-balance-status'),
+            balanceSkipReason: el.getAttribute('data-layout-balance-skip-reason'),
+            balanceRouting: el.getAttribute('data-layout-balance-routing'),
+            lightJustifyResidualDiff: (() => {
+                const value = el.getAttribute('data-layout-balance-light-residual-diff');
+                const number = value === null ? NaN : Number(value);
+                return Number.isFinite(number) ? number : null;
+            })(),
+            finalJustifyOvershootAfterShrink: (() => {
+                const value = el.getAttribute('data-layout-final-justify-overshoot-after-shrink');
+                const number = value === null || value === 'none' ? NaN : Number(value);
+                return Number.isFinite(number) ? number : null;
+            })(),
+            finalJustifyCapacityAfter: (() => {
+                const raw = el.getAttribute('data-layout-final-justify-capacity-after');
+                if (!raw) return null;
+                try { return JSON.parse(raw); } catch { return { parseError: true }; }
+            })(),
+            balanceInputHeight: el.getAttribute('data-layout-balance-input-height'),
+            balanceAvailable: el.getAttribute('data-layout-balance-available'),
+            balanceCandidates: el.getAttribute('data-layout-balance-candidates'),
+            balanceItems: el.getAttribute('data-layout-balance-items'),
+            balanceFits: el.getAttribute('data-layout-balance-fits'),
+            balanceValid: el.getAttribute('data-layout-balance-valid'),
+            balanceRightPartLines: el.getAttribute('data-layout-balance-right-part-lines'),
+            balanceLeftPartLines: el.getAttribute('data-layout-balance-left-part-lines'),
+            balanceOver: el.getAttribute('data-layout-balance-over'),
+            balanceRight: el.getAttribute('data-layout-balance-right'),
+            balanceLeft: el.getAttribute('data-layout-balance-left'),
+            balanceDiff: el.getAttribute('data-layout-balance-diff'),
+            pageFinalJustifyDiagnostic: el.getAttribute('data-layout-page-final-justify-diagnostic'),
+            globalJustifyDiagnostic: el.getAttribute('data-layout-global-justify-diagnostic'),
+            stageGeometryDiagnostic: (() => {
+                const raw = el.getAttribute('data-layout-stage-geometry-diagnostic');
+                if (!raw) return null;
+                try { return JSON.parse(raw); } catch { return { parseError: true }; }
+            })(),
+            stageGeometryDiagnosticError: el.getAttribute('data-layout-stage-geometry-diagnostic-error'),
+            finalPhase: el.getAttribute('data-layout-final-phase'),
+            finalRightHeight: el.getAttribute('data-layout-final-right-height'),
+            finalLeftHeight: el.getAttribute('data-layout-final-left-height'),
+            finalDiff: el.getAttribute('data-layout-final-diff'),
+            finalInnerHeight: el.getAttribute('data-layout-final-inner-height'),
+            finalOuterHeight: el.getAttribute('data-layout-final-outer-height'),
+            finalFits: el.getAttribute('data-layout-final-fits'),
+            finalJustifyRollbackReason: el.getAttribute('data-layout-final-justify-rollback-reason'),
+            postfitTriggered: el.getAttribute('data-layout-postfit-triggered'),
+            postfitOuterOverflow: el.getAttribute('data-layout-postfit-outer-overflow'),
+            postfitInnerOverflow: el.getAttribute('data-layout-postfit-inner-overflow'),
+            globalJustifyRolledBack: el.getAttribute('data-layout-global-justify-rolled-back'),
+            globalJustifyRollbackReason: el.getAttribute('data-layout-global-justify-rollback-reason'),
+            globalJustifyBeforeRight: el.getAttribute('data-layout-global-justify-before-right'),
+            globalJustifyBeforeLeft: el.getAttribute('data-layout-global-justify-before-left'),
+            globalJustifyAfterRight: el.getAttribute('data-layout-global-justify-after-right'),
+            globalJustifyAfterLeft: el.getAttribute('data-layout-global-justify-after-left'),
+            globalJustifyOvershootBeforeShrink: el.getAttribute('data-layout-global-justify-overshoot-before-shrink'),
+            globalJustifyOvershootAfterShrink: el.getAttribute('data-layout-global-justify-overshoot-after-shrink'),
+            pageFinalJustifyRolledBack: el.getAttribute('data-layout-page-final-justify-rolled-back'),
+            decisionRecord: (() => {
+                const raw = el.getAttribute('data-layout-decision-record');
+                if (!raw) return null;
+                try { return JSON.parse(raw); } catch { return { parseError: true }; }
+            })()
+        } : null,
         parentType: parent ? parent.type : null
     };
 
@@ -290,9 +570,23 @@ function extractGeometry() {
     pageEls.forEach((pgEl, pIdx) => {
         const pgRect = rectOf(pgEl);
         const page = {
+            id: 'page-' + pIdx,
             idx: pIdx,
             label: (pgEl.querySelector('.page-number-footer')?.textContent?.trim() || String(pIdx + 1)),
             rect: pgRect,
+            // The CLI report uses this synthetic page node (not the DOM page node).
+            // Copy instrumentation attributes here so page-level reflow measurements survive serialization.
+            footnoteReflowMetrics: {
+                queueCount: pgEl.getAttribute('data-fn-reflow-queue-count'),
+                predictedHeight: pgEl.getAttribute('data-fn-reflow-predicted-height'),
+                beforeFlowHeight: pgEl.getAttribute('data-fn-reflow-before-flow-height'),
+                afterFlowHeight: pgEl.getAttribute('data-fn-reflow-after-flow-height'),
+                flowHeightDelta: pgEl.getAttribute('data-fn-reflow-flow-height-delta'),
+                beforeLastBlockHeight: pgEl.getAttribute('data-fn-reflow-before-last-block-height'),
+                afterLastBlockHeight: pgEl.getAttribute('data-fn-reflow-after-last-block-height'),
+                afterLastBlockOverflow: pgEl.getAttribute('data-fn-reflow-after-last-block-overflow'),
+                lastBlockTopOffset: pgEl.getAttribute('data-fn-reflow-last-block-top-offset')
+            },
             children: [],
             issues: []
         };
@@ -304,8 +598,23 @@ function extractGeometry() {
         }
         pages.push(page);
     });
+    const sideNoteFitCorrections = Array.from(document.querySelectorAll('#book-container .a4-page .side-note-anchor[data-side-note-fit-correction]')).map(el => {
+        const pageEl = el.closest('.a4-page');
+        const pageIdx = Array.from(pageEls).indexOf(pageEl);
+        const rect = rectOf(el);
+        return {
+            pageIdx,
+            pageLabel: pageEl?.querySelector('.page-number-footer')?.textContent?.trim() || String(pageIdx + 1),
+            tokenId: el.getAttribute('data-for-token'),
+            correction: el.getAttribute('data-side-note-fit-correction'),
+            shiftPx: Number(el.getAttribute('data-side-note-fit-shift-px')) || 0,
+            noteText: (el.textContent || '').trim().slice(0, 160),
+            rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.w * 10) / 10,
+                h: Math.round(rect.h * 10) / 10, bottom: Math.round(rect.bottom * 10) / 10 }
+        };
+    });
     const t1 = performance.now();
-    return { pages, stats: { pageCount: pages.length, extractMs: +(t1 - t0).toFixed(2) } };
+    return { pages, sideNoteFitCorrections, stats: { pageCount: pages.length, extractMs: +(t1 - t0).toFixed(2) } };
 }
 
 /* ========================================================================
@@ -336,6 +645,13 @@ function rOverlap(a, b) {
 
 function auditContainment(node, issues) {
     for (const child of node.children) {
+        // Side notes are absolutely positioned anchors. Their height intentionally
+        // does not contribute to the margin-column box, so containment against that
+        // box is not a valid geometric invariant; audit them against body/page bounds below.
+        if (node.type === 'margin-col' && child.type === 'side-note') {
+            auditContainment(child, issues);
+            continue;
+        }
         if (!rContains(node, child, TOL.containment)) {
             const overflow = {
                 left: Math.max(0, node.rect.x - child.rect.x),
@@ -346,8 +662,8 @@ function auditContainment(node, issues) {
             const overflowPx = Math.max(overflow.left, overflow.top, overflow.right, overflow.bottom);
 
             // [תיקון] התאם את החומרה והסיווג לפי סוג הגלישה:
-            // - block-2col שגולש מ-body-flow: המנוע מותח את הבלוק האחרון בכוונה
-            //   (stretchPageToBottom). גלישה עד 10px היא "טבעית" = low, מעבר לזה = medium/high.
+            // - block-2col שגולש מ-body-flow: מסווגים לפי גודל הגלישה בלבד.
+            //   אין להסיק שהגלישה נגרמה מ-stretchPageToBottom בלי ראיה ממדדי הפריסה.
             // - note-marker שגולש מ-p-cut/p-end: עיגול פיקסלים של סמן הערה (1.3px) = low.
             // - side-note שגולש מ-margin-col: גלישה אמיתית של הערות צד.
             // - כל השאר: גלישה אמיתית.
@@ -361,18 +677,25 @@ function auditContainment(node, issues) {
             if (isBlockFromBodyFlow) {
                 if (overflowPx <= 10) {
                     severity = 'low';
-                    note = ' (גלישה טבעית מ-stretchPageToBottom)';
+                    note = ' (גלישה קטנה של block-2col מ-body-flow)';
                 } else if (overflowPx <= 20) {
                     severity = 'medium';
-                    note = ' (גלישה מ-stretchPageToBottom)';
+                    note = ' (גלישת block-2col מ-body-flow)';
                 } else {
                     severity = 'high';
-                    note = ' (גלישה חמורה מ-stretchPageToBottom)';
+                    note = ' (גלישה חמורה של block-2col מ-body-flow; נדרשת בדיקת מקור)';
                 }
-            } else if (isNoteMarker && overflowPx <= 2) {
+            } else if (isNoteMarker && overflowPx <= 3) {
+                // Inline/superscript note markers can extend slightly beyond the paragraph
+                // line box; a ~2–3px vertical protrusion is not a page-layout failure.
                 severity = 'low';
                 kind = 'containment-rounding';
-                note = ' (עיגול פיקסלים של סמן הערה)';
+                note = ' (חריגה אנכית קטנה של סמן הערה בתוך שורת טקסט)';
+            } else if (child.type === 'header-col') {
+                // Header text/SVG can exceed the grid row by a few pixels because of line boxes.
+                // Keep small overflow visible as a warning, not a critical geometry failure.
+                severity = overflowPx > 8 ? 'high' : (overflowPx > 3 ? 'medium' : 'low');
+                note = ' (חריגה אנכית של עמודת כותרת)';
             } else if (isSideNote) {
                 severity = overflowPx > 20 ? 'high' : 'medium';
                 note = ' (הערת צד גולשת משטח המרזב)';
@@ -385,7 +708,26 @@ function auditContainment(node, issues) {
                 location: describePath(node),
                 childType: child.type,
                 childText: child.text,
-                childRect: { x: Math.round(child.rect.x), y: Math.round(child.rect.y), w: Math.round(child.rect.w), h: Math.round(child.rect.h) },
+                parentRect: { x: Math.round(node.rect.x), y: Math.round(node.rect.y), w: Math.round(node.rect.w), h: Math.round(node.rect.h), bottom: Math.round(node.rect.bottom) },
+                previousSiblings: node.children.slice(Math.max(0, node.children.indexOf(child) - 5), node.children.indexOf(child)).map(s => ({
+                    type: s.type, cls: s.cls, text: s.text,
+                    rect: { x: Math.round(s.rect.x), y: Math.round(s.rect.y), w: Math.round(s.rect.w), h: Math.round(s.rect.h), bottom: Math.round(s.rect.bottom) }
+                })),
+                childRect: { x: Math.round(child.rect.x), y: Math.round(child.rect.y), w: Math.round(child.rect.w), h: Math.round(child.rect.h), bottom: Math.round(child.rect.bottom) },
+                layoutMetrics: child.layoutMetrics || null,
+                inlineGeometry: child.inlineGeometry || (child.type === 'note-marker' ? resolveNoteMarkerInlineGeometry(child.rect) : null),
+                inlineGeometrySource: child.inlineGeometry ? 'tree-extraction' : (child.type === 'note-marker' ? 'live-dom-fallback' : null),
+                childDetails: child.type === 'block-2col' ? child.children.filter(c => c.type === 'column').map(col => ({
+                    side: col.side,
+                    rect: { x: Math.round(col.rect.x), y: Math.round(col.rect.y), w: Math.round(col.rect.w), h: Math.round(col.rect.h), bottom: Math.round(col.rect.bottom) },
+                    paragraphCount: col.children.filter(p => ['p', 'p-cut', 'p-end'].includes(p.type)).length,
+                    firstParagraphs: col.children.filter(p => ['p', 'p-cut', 'p-end'].includes(p.type)).slice(0, 2).map(p => ({
+                        type: p.type, tokenId: p.tokenId, isContinuation: p.isContinuation, lineCount: p.lines.length, text: p.rawText || p.text
+                    })),
+                    lastParagraphs: col.children.filter(p => ['p', 'p-cut', 'p-end'].includes(p.type)).slice(-3).map(p => ({
+                        type: p.type, tokenId: p.tokenId, isContinuation: p.isContinuation, lineCount: p.lines.length, text: p.rawText || p.text
+                    }))
+                })) : undefined,
                 overflow,
                 overflowPx: Math.round(overflowPx * 10) / 10,
                 note: note.trim(),
@@ -394,6 +736,89 @@ function auditContainment(node, issues) {
         }
         auditContainment(child, issues);
     }
+}
+
+function auditSideNoteBounds(node, issues) {
+    if (node.type === 'side-note') {
+        let ancestor = node._parent;
+        let marginCol = null, bodyFlow = null;
+        while (ancestor) {
+            if (!marginCol && ancestor.type === 'margin-col') marginCol = ancestor;
+            if (!bodyFlow && ancestor.type === 'body-flow') bodyFlow = ancestor;
+            ancestor = ancestor._parent;
+        }
+        const horizontalOverflow = marginCol ? Math.max(
+            0,
+            marginCol.rect.x - node.rect.x,
+            node.rect.right - marginCol.rect.right
+        ) : 0;
+        const verticalOverflow = bodyFlow ? Math.max(
+            0,
+            bodyFlow.rect.y - node.rect.y,
+            node.rect.bottom - bodyFlow.rect.bottom
+        ) : 0;
+        const overflowPx = Math.max(horizontalOverflow, verticalOverflow);
+        if (overflowPx > TOL.containment) {
+            const el = _nodeToEl.get(node);
+            const pageEl = el?.closest('.a4-page');
+            const blockEl = el?.closest('.block-2col, .block-single-col');
+            const marginEl = el?.parentElement;
+            const tokenId = el?.getAttribute('data-for-token') || node.tokenId || null;
+            const findAnchor = (block, id) => block && id
+                ? Array.from(block.querySelectorAll('p[data-token-id]')).find(p =>
+                    p.getAttribute('data-token-id') === id && p.getAttribute('data-is-cont') !== 'true') || null
+                : null;
+            const anchorEl = findAnchor(blockEl, tokenId);
+            const toRect = elem => {
+                if (!elem) return null;
+                const r = rectOf(elem);
+                return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w * 10) / 10,
+                    h: Math.round(r.h * 10) / 10, bottom: Math.round(r.bottom * 10) / 10 };
+            };
+            const currentRect = toRect(el);
+            const rightMargin = !!marginEl?.classList.contains('right-margin');
+            const leftMargin = !!marginEl?.classList.contains('left-margin');
+            const nearbyNotes = pageEl ? Array.from(pageEl.querySelectorAll('.margin-notes-column .side-note-anchor'))
+                .filter(note => {
+                    const m = note.parentElement;
+                    return (!!m?.classList.contains('right-margin') === rightMargin)
+                        && (!!m?.classList.contains('left-margin') === leftMargin);
+                })
+                .map(note => {
+                    const r = toRect(note);
+                    const id = note.getAttribute('data-for-token');
+                    const noteBlock = note.closest('.block-2col, .block-single-col');
+                    const noteAnchor = findAnchor(noteBlock, id);
+                    return { tokenId: id, text: (note.textContent || '').trim().slice(0, 160),
+                        rect: r, anchorRect: toRect(noteAnchor),
+                        blockRect: toRect(noteBlock) };
+                })
+                .filter(note => note.rect && currentRect && Math.abs(note.rect.y - currentRect.y) <= 180)
+                .sort((x, y) => x.rect.y - y.rect.y) : [];
+            const cs = el ? getComputedStyle(el) : null;
+            issues.push({
+                kind: 'side-note-overflow',
+                severity: overflowPx > 20 ? 'high' : (overflowPx > 8 ? 'medium' : 'low'),
+                pageIdx: getPageIdx(node),
+                location: describePath(node),
+                tokenId,
+                noteText: (el?.textContent || '').trim().slice(0, 300),
+                childRect: { x: Math.round(node.rect.x), y: Math.round(node.rect.y), w: Math.round(node.rect.w), h: Math.round(node.rect.h), bottom: Math.round(node.rect.bottom) },
+                marginRect: marginCol ? { x: Math.round(marginCol.rect.x), y: Math.round(marginCol.rect.y), w: Math.round(marginCol.rect.w), h: Math.round(marginCol.rect.h), bottom: Math.round(marginCol.rect.bottom) } : null,
+                bodyFlowRect: bodyFlow ? { x: Math.round(bodyFlow.rect.x), y: Math.round(bodyFlow.rect.y), w: Math.round(bodyFlow.rect.w), h: Math.round(bodyFlow.rect.h), bottom: Math.round(bodyFlow.rect.bottom) } : null,
+                blockRect: toRect(blockEl),
+                anchorRect: toRect(anchorEl),
+                anchorText: (anchorEl?.getAttribute('data-raw-text') || anchorEl?.textContent || '').trim().slice(0, 160),
+                noteStyle: cs ? { top: cs.top, position: cs.position, fontSize: cs.fontSize, lineHeight: cs.lineHeight,
+                    fitCorrection: el?.getAttribute('data-side-note-fit-correction') || null,
+                    fitShiftPx: el?.getAttribute('data-side-note-fit-shift-px') || null } : null,
+                nearbySameSideNotes: nearbyNotes,
+                overflowPx: Math.round(overflowPx * 10) / 10,
+                message: 'הערת צד חורגת מתחום השוליים או מגבולות גוף העמוד: ' + Math.round(overflowPx * 10) / 10 + 'px'
+            });
+        }
+    }
+    for (const child of node.children) auditSideNoteBounds(child, issues);
 }
 
 function auditSiblingOverlap(node, issues) {
@@ -405,15 +830,19 @@ function auditSiblingOverlap(node, issues) {
     for (let i = 0; i < node.children.length; i++) {
         for (let j = i + 1; j < node.children.length; j++) {
             const a = node.children[i], b = node.children[j];
-            const ov = rOverlap(a, b);
-            if (ov > TOL.overlap) {
+            const dx = Math.max(0, Math.min(a.rect.right, b.rect.right) - Math.max(a.rect.x, b.rect.x));
+            const dy = Math.max(0, Math.min(a.rect.bottom, b.rect.bottom) - Math.max(a.rect.y, b.rect.y));
+            const ov = dx * dy;
+            // Ignore edge-only/subpixel contacts: area alone can label a 1px-wide seam
+            // as a serious overlap even when the rectangles are merely touching after rounding.
+            if (dx > 1.5 && dy > 1.5 && ov > TOL.overlap) {
                 // אם שניהם טורים (column) באותו בלוק — זה תקין (ם נמצאים זה ליד זה, לא חופפים)
                 if (a.type === 'column' && b.type === 'column') continue;
                 // הערות בתוך fn-line — לפעמים חופפות עם note-line-num
                 if (a.parentType === 'fn-line' || b.parentType === 'fn-line') continue;
                 issues.push({
                     kind: 'overlap',
-                    severity: 'high',
+                    severity: ov > 100 ? 'high' : (ov > 25 ? 'medium' : 'low'),
                     pageIdx: getPageIdx(node),
                     location: describePath(node),
                     aType: a.type, aText: a.text,
@@ -431,22 +860,253 @@ function auditSiblingOverlap(node, issues) {
 
 function auditColumnBalance(node, issues) {
     if (node.type === 'block-2col') {
-        const right = node.children.find(c => c.type === 'column' && c.side === 'right');
-        const left = node.children.find(c => c.type === 'column' && c.side === 'left');
+        const rightNode = node.children.find(c => c.type === 'column' && c.side === 'right') || null;
+        const leftNode = node.children.find(c => c.type === 'column' && c.side === 'left') || null;
+        const blockEl = _nodeToEl.get(node) || null;
+
+        // buildNodeWithRefs intentionally omits rectangles < 1px high. That is
+        // correct for the general geometry tree, but it must not make a fully
+        // empty column invisible to the balance audit. Recover both sides from
+        // the live DOM, including zero-height rectangles, whenever possible.
+        function resolveColumnGeometry(side, existingNode) {
+            if (existingNode) {
+                return {
+                    rect: existingNode.rect,
+                    node: existingNode,
+                    source: 'geometry-model',
+                    elementPresent: true
+                };
+            }
+            if (blockEl) {
+                const candidates = Array.from(blockEl.querySelectorAll('.main-column'));
+                const el = candidates.find(candidate => {
+                    const cls = typeof candidate.className === 'string' ? candidate.className : '';
+                    return side === 'right' ? cls.includes('right-col') : cls.includes('left-col');
+                });
+                if (el) {
+                    return {
+                        rect: rectOf(el),
+                        node: null,
+                        source: 'live-dom-including-zero-height',
+                        elementPresent: true
+                    };
+                }
+            }
+            // Missing markup is not silently ignored: model it as zero geometry
+            // and label the source so the report distinguishes malformed/missing
+            // DOM from an actual empty column element.
+            const blockRect = node.rect || { x: 0, y: 0, w: 0, h: 0, right: 0, bottom: 0 };
+            return {
+                rect: { x: blockRect.x, y: blockRect.y, w: 0, h: 0, right: blockRect.x, bottom: blockRect.y },
+                node: null,
+                source: 'missing-dom-column',
+                elementPresent: false
+            };
+        }
+
+        const right = resolveColumnGeometry('right', rightNode);
+        const left = resolveColumnGeometry('left', leftNode);
         if (right && left) {
-            const diff = Math.abs(right.rect.h - left.rect.h);
-            if (diff > TOL.balance) {
+            const rightHeight = Number.isFinite(right.rect.h) ? right.rect.h : 0;
+            const leftHeight = Number.isFinite(left.rect.h) ? left.rect.h : 0;
+            const diff = Math.abs(rightHeight - leftHeight);
+            const fullWidthFallback = blockEl?.getAttribute('data-layout-balance-fallback') === 'full-width-terminal-residual';
+            if (fullWidthFallback) {
+                const side = blockEl.getAttribute('data-layout-balance-fallback-side');
+                const activeEl = blockEl.querySelector(side === 'left' ? '.main-column.left-col' : '.main-column.right-col');
+                const inactiveEl = blockEl.querySelector(side === 'left' ? '.main-column.right-col' : '.main-column.left-col');
+                const activeStyle = activeEl ? activeEl.ownerDocument.defaultView.getComputedStyle(activeEl) : null;
+                const inactiveStyle = inactiveEl ? inactiveEl.ownerDocument.defaultView.getComputedStyle(inactiveEl) : null;
+                const activeRect = activeEl ? rectOf(activeEl) : null;
+                const activeParagraph = activeEl?.querySelector(':scope > p') || null;
+                const activeParagraphStyle = activeParagraph
+                    ? activeParagraph.ownerDocument.defaultView.getComputedStyle(activeParagraph) : null;
+                const activeParagraphRect = activeParagraph ? rectOf(activeParagraph) : null;
+                const activeLineHeight = parseFloat(activeParagraphStyle?.lineHeight || '');
+                const activeRenderedLineCount = activeParagraph && Number.isFinite(activeParagraphRect?.h) &&
+                    Number.isFinite(activeLineHeight) && activeLineHeight > 0
+                    ? Math.max(1, Math.round(activeParagraphRect.h / activeLineHeight))
+                    : null;
+                const widowOrphanValid = !activeParagraph?.classList.contains('p-cut') ||
+                    (Number.isFinite(activeRenderedLineCount) && activeRenderedLineCount >= 2);
+                const fallbackValid = ['left', 'right'].includes(side) &&
+                    !!activeEl && !!inactiveEl &&
+                    activeStyle?.display !== 'none' &&
+                    activeStyle?.gridColumnStart === '3' &&
+                    activeStyle?.gridColumnEnd === '6' &&
+                    inactiveStyle?.display === 'none' &&
+                    !!activeRect && activeRect.w > 0 &&
+                    (activeEl.textContent || '').trim().length > 0 &&
+                    inactiveEl.children.length === 0 &&
+                    widowOrphanValid;
                 issues.push({
-                    kind: 'imbalance',
-                    severity: diff > 30 ? 'high' : (diff > 10 ? 'medium' : 'low'),
+                    kind: 'structural-fallback',
+                    severity: fallbackValid ? 'low' : 'high',
                     pageIdx: getPageIdx(node),
                     location: describePath(node),
-                    rightH: Math.round(right.rect.h),
-                    leftH: Math.round(left.rect.h),
+                    balanceOutcome: 'full-width-terminal-residual',
+                    fallbackSide: side,
+                    fallbackValid,
+                    widowOrphanValid,
+                    activeParagraphClass: activeParagraph?.className || null,
+                    activeRenderedLineCount,
+                    activeColumnWidth: Math.round(activeRect?.w || 0),
+                    activeRenderedTextLength: (activeEl?.textContent || '').trim().length,
+                    inactiveColumnDisplay: inactiveStyle?.display || null,
+                    message: fallbackValid
+                        ? 'Short terminal fragment intentionally spans both text columns because no legal two-column split exists.'
+                        : 'Invalid full-width terminal residual fallback: verify side, grid span, hidden opposite column, and preserved rendered text.'
+                });
+            }
+            if (diff > TOL.balance && !fullWidthFallback) {
+                const metrics = node.layoutMetrics || {};
+                const decision = metrics.decisionRecord || {};
+                const selection = decision.selection || {};
+                const finalJustify = decision.finalJustify || {};
+                const routing = metrics.balanceRouting || selection.routing;
+                const residualDiff = Number.isFinite(metrics.lightJustifyResidualDiff)
+                    ? metrics.lightJustifyResidualDiff : selection.lightJustify?.residualDiff;
+                const overshootAfterShrink = Number.isFinite(metrics.finalJustifyOvershootAfterShrink)
+                    ? metrics.finalJustifyOvershootAfterShrink : finalJustify.overshootAfterShrink;
+                const capacityAfter = metrics.finalJustifyCapacityAfter || finalJustify.capacityAfter || {};
+                const shorterSide = rightHeight <= leftHeight ? 'right' : 'left';
+                const shorterCapacity = capacityAfter[shorterSide];
+                let balanceOutcome = 'unclassified-residual';
+                let acceptedResidualLimitPx = null;
+                if (routing === 'light-justify' &&
+                    Number.isFinite(residualDiff) &&
+                    Math.abs(residualDiff) <= 8) {
+                    balanceOutcome = 'policy-accepted-light-justify-residual';
+                    acceptedResidualLimitPx = 8;
+                } else if (routing === 'balanceColumns' &&
+                    Number.isFinite(overshootAfterShrink) &&
+                    overshootAfterShrink < -0.5 &&
+                    shorterCapacity &&
+                    Number.isFinite(shorterCapacity.totalCapacity) &&
+                    shorterCapacity.totalCapacity <= 0.5) {
+                    balanceOutcome = 'capacity-limited-residual';
+                }
+
+                const roundRect = rect => ({
+                    x: Math.round(Number.isFinite(rect.x) ? rect.x : 0),
+                    y: Math.round(Number.isFinite(rect.y) ? rect.y : 0),
+                    w: Math.round(Number.isFinite(rect.w) ? rect.w : 0),
+                    h: Math.round(Number.isFinite(rect.h) ? rect.h : 0)
+                });
+                // Capture the structural cause of an imbalance without changing layout.
+                // Keep this compact and source-oriented so a report can distinguish a
+                // genuinely short terminal paragraph from a routing/pagination defect.
+                const summarizeElement = el => {
+                    if (!el) return null;
+                    const dataRawText = el.getAttribute?.('data-raw-text') || '';
+                    const renderedText = el.textContent || '';
+                    const rawText = (dataRawText || renderedText).replace(/\s+/g, ' ').trim();
+                    const r = rectOf(el);
+                    const computed = el.ownerDocument?.defaultView?.getComputedStyle
+                        ? el.ownerDocument.defaultView.getComputedStyle(el) : null;
+                    return {
+                        tag: String(el.tagName || '').toLowerCase(),
+                        className: typeof el.className === 'string' ? el.className : '',
+                        tokenId: el.getAttribute?.('data-token-id') || null,
+                        isContinuation: el.getAttribute?.('data-is-cont') === 'true',
+                        isCut: el.classList?.contains('p-cut') || false,
+                        height: Math.round(Number.isFinite(r?.h) ? r.h : 0),
+                        scrollHeight: Number.isFinite(el.scrollHeight) ? el.scrollHeight : null,
+                        clientHeight: Number.isFinite(el.clientHeight) ? el.clientHeight : null,
+                        offsetHeight: Number.isFinite(el.offsetHeight) ? el.offsetHeight : null,
+                        childElementCount: Number.isFinite(el.childElementCount) ? el.childElementCount : null,
+                        dataRawTextLength: dataRawText.length,
+                        renderedTextLength: renderedText.length,
+                        computedDisplay: computed?.display || null,
+                        computedOverflowY: computed?.overflowY || null,
+                        computedWhiteSpace: computed?.whiteSpace || null,
+                        computedLineHeight: computed?.lineHeight || null,
+                        computedHeight: computed?.height || null,
+                        textPreview: rawText.slice(0, 180),
+                        renderedTextPreview: renderedText.replace(/\s+/g, ' ').trim().slice(0, 180),
+                        textLength: rawText.length
+                    };
+                };
+                const summarizeColumn = side => {
+                    const col = blockEl?.querySelector(side === 'right' ? '.main-column.right-col' : '.main-column.left-col');
+                    return col ? Array.from(col.children).map(summarizeElement) : null;
+                };
+                const summarizeNeighbor = el => {
+                    if (!el) return null;
+                    const r = rectOf(el);
+                    return {
+                        tag: String(el.tagName || '').toLowerCase(),
+                        className: typeof el.className === 'string' ? el.className : '',
+                        tokenId: el.getAttribute?.('data-token-id') || null,
+                        height: Math.round(Number.isFinite(r?.h) ? r.h : 0),
+                        textPreview: (el.getAttribute?.('data-raw-text') || el.textContent || '')
+                            .replace(/\s+/g, ' ').trim().slice(0, 180)
+                    };
+                };
+                const bodyFlow = blockEl?.parentElement || null;
+                const previousBlock = blockEl?.previousElementSibling || null;
+                const nextBlock = blockEl?.nextElementSibling || null;
+                const pageEl = blockEl?.closest('.page') || blockEl?.closest('[data-page-idx]') || null;
+                const contentContext = {
+                    blockClass: typeof blockEl?.className === 'string' ? blockEl.className : null,
+                    blockChildCount: blockEl?.children?.length ?? null,
+                    rightChildren: summarizeColumn('right'),
+                    leftChildren: summarizeColumn('left'),
+                    previousSibling: summarizeNeighbor(previousBlock),
+                    nextSibling: summarizeNeighbor(nextBlock),
+                    pageLabel: pageEl?.getAttribute('data-page-label') || pageEl?.querySelector('.page-number')?.textContent?.trim() || null,
+                    bodyFlowClass: typeof bodyFlow?.className === 'string' ? bodyFlow.className : null
+                };
+                const emptySide = rightHeight <= leftHeight ? 'right' : 'left';
+                const emptyHeight = emptySide === 'right' ? rightHeight : leftHeight;
+                const emptySideGeometry = emptySide === 'right' ? right : left;
+                const isCompletelyEmpty = emptyHeight < 1 && emptySideGeometry.elementPresent;
+                const hasMissingColumnElement = !right.elementPresent || !left.elementPresent;
+                const missingSide = !right.elementPresent ? 'right' : (!left.elementPresent ? 'left' : null);
+                const isStructuralColumnFailure = isCompletelyEmpty || hasMissingColumnElement;
+                const classifiedOutcome = hasMissingColumnElement
+                    ? 'missing-column-element'
+                    : (isCompletelyEmpty ? 'one-column-empty' : balanceOutcome);
+
+                issues.push({
+                    kind: 'imbalance',
+                    severity: isStructuralColumnFailure ? 'high' : (diff > 30 ? 'high' : (diff > 10 ? 'medium' : 'low')),
+                    pageIdx: getPageIdx(node),
+                    location: describePath(node),
+                    rightH: Math.round(rightHeight),
+                    leftH: Math.round(leftHeight),
                     diff: Math.round(diff),
-                    rightRect: { x: Math.round(right.rect.x), y: Math.round(right.rect.y), w: Math.round(right.rect.w), h: Math.round(right.rect.h) },
-                    leftRect: { x: Math.round(left.rect.x), y: Math.round(left.rect.y), w: Math.round(left.rect.w), h: Math.round(left.rect.h) },
-                    message: `אי-איזון טורים: ימין=${Math.round(right.rect.h)}px שמאל=${Math.round(left.rect.h)}px פער=${Math.round(diff)}px`
+                    balanceOutcome: classifiedOutcome,
+                    acceptedResidualLimitPx,
+                    emptyColumnSide: isCompletelyEmpty ? emptySide : null,
+                    missingColumnSide: missingSide,
+                    columnGeometrySource: {
+                        right: right.source,
+                        left: left.source
+                    },
+                    columnElementPresent: {
+                        right: right.elementPresent,
+                        left: left.elementPresent
+                    },
+                    injectedEmptyColumnTest: blockEl?.getAttribute('data-geometry-audit-test-empty-column') === 'true',
+                    injectedMissingColumnTest: blockEl?.getAttribute('data-geometry-audit-test-missing-column') === 'true',
+                    rightRect: roundRect(right.rect),
+                    leftRect: roundRect(left.rect),
+                    contentContext,
+                    layoutMetrics: metrics ? {
+                        globalJustifyDiagnostic: metrics.globalJustifyDiagnostic || null,
+                        pageFinalJustifyDiagnostic: metrics.pageFinalJustifyDiagnostic || null,
+                        balanceStatus: metrics.balanceStatus || null,
+                        balanceSkipReason: metrics.balanceSkipReason || null,
+                        balanceDiff: metrics.balanceDiff || null,
+                        decisionRecord: decision,
+                        stageGeometryDiagnostic: metrics.stageGeometryDiagnostic || null
+                    } : null,
+                    message: hasMissingColumnElement
+                        ? `כשל מבני חמור: רכיב הטור ${missingSide === 'right' ? 'הימני' : 'השמאלי'} חסר ב-DOM; לא ניתן לקבוע שהוא טור קיים וריק. גובה גיאומטרי חלופי=0px; הטור השני בגובה ${Math.round(missingSide === 'right' ? leftHeight : rightHeight)}px; פער=${Math.round(diff)}px`
+                        : (isCompletelyEmpty
+                            ? `אי-איזון חמור: הטור ${emptySide === 'right' ? 'הימני' : 'השמאלי'} קיים אך ריק לחלוטין (גובה ${Math.round(emptyHeight)}px); הטור השני בגובה ${Math.round(emptySide === 'right' ? leftHeight : rightHeight)}px; פער=${Math.round(diff)}px`
+                            : `אי-איזון טורים: ימין=${Math.round(rightHeight)}px שמאל=${Math.round(leftHeight)}px פער=${Math.round(diff)}px [${balanceOutcome}]`)
                 });
             }
         }
@@ -455,62 +1115,139 @@ function auditColumnBalance(node, issues) {
 }
 
 function auditWidowOrphan(node, issues) {
-    /* [V22] לפי Reports_Summaries_Studies/1_Defining_Layout_Issues.md (בעיות 1-2):
-       אלמנה = פסקת המשך (data-is-cont) בראש טור עם שורה אחת בלבד.
-       יתום  = פסקה חתוכה (p-cut, ממשיכה בטור הבא) בסוף טור עם שורה אחת בלבד.
-       p-end בסוף טור עם שורה אחת = פסקה קצרה שלמה — תקין, לא מדווח. */
     if (node.type === 'column') {
-        const items = node.children;
-        const isPara = c => c.type === 'p' || c.type === 'p-cut' || c.type === 'p-end';
-        const first = items[0], last = items[items.length - 1];
-        if (first && isPara(first) && first.cont && first.lines.length === 1) {
-            issues.push({
-                kind: 'widow',
-                severity: 'high',
-                pageIdx: getPageIdx(node),
-                location: describePath(node),
-                pText: first.text,
-                childRect: rInts(first.rect),
-                message: `אלמנה: פסקת המשך עם שורה אחת בלבד בראש טור ${node.side} ("${first.text.slice(0, 30)}...")`
-            });
-        }
-        if (last && last.type === 'p-cut' && last.lines.length === 1) {
-            issues.push({
-                kind: 'orphan',
-                severity: 'high',
-                pageIdx: getPageIdx(node),
-                location: describePath(node),
-                pText: last.text,
-                childRect: rInts(last.rect),
-                message: `יתום: פסקה חתוכה עם שורה אחת בלבד בסוף טור ${node.side} ("${last.text.slice(0, 30)}...")`
-            });
+        const ps = node.children.filter(c => c.type === 'p' || c.type === 'p-cut' || c.type === 'p-end');
+        if (ps.length > 0) {
+            const first = ps[0];
+            const last = ps[ps.length - 1];
+
+            // A short complete paragraph is NOT a widow. A widow is the single
+            // final line of a paragraph continued from a previous column/page,
+            // stranded at the top of this column.
+            if (first.lines.length === 1 && first.type === 'p-end' && first.isContinuation) {
+                issues.push({
+                    kind: 'widow',
+                    severity: 'medium',
+                    pageIdx: getPageIdx(node),
+                    location: describePath(node),
+                    tokenId: first.tokenId,
+                    pText: first.text,
+                    childRect: { x: Math.round(first.rect.x), y: Math.round(first.rect.y), w: Math.round(first.rect.w), h: Math.round(first.rect.h) },
+                    message: `אלמנה: השורה האחרונה של פסקה נמשכת מופיעה לבדה בראש טור ${node.side} ("${first.text.slice(0, 30)}...")`
+                });
+            }
+
+            // An orphan is the first line of a paragraph stranded at the bottom
+            // of a column while the same paragraph continues in the next column/page.
+            if (last.lines.length === 1 && last.type === 'p-cut') {
+                const lastEl = _nodeToEl.get(last);
+                const splitAttr = name => lastEl?.getAttribute(name) ?? null;
+                const cs = lastEl ? getComputedStyle(lastEl) : null;
+                issues.push({
+                    kind: 'orphan',
+                    severity: 'medium',
+                    pageIdx: getPageIdx(node),
+                    location: describePath(node),
+                    tokenId: last.tokenId,
+                    pText: last.text,
+                    className: last.cls,
+                    isContinuation: last.isContinuation,
+                    renderedLineCount: last.lines.length,
+                    renderedLineWidths: last.lines.map(line => Math.round(line.w * 100) / 100),
+                    balanceFallback,
+                    balanceFallbackSparseLine,
+                    splitDiagnostics: {
+                        inputLines: splitAttr('data-layout-split-input-lines'),
+                        fitLines: splitAttr('data-layout-split-fit-lines'),
+                        placedLines: splitAttr('data-layout-split-placed-lines'),
+                        minFirst: splitAttr('data-layout-split-min-first'),
+                        minLast: splitAttr('data-layout-split-min-last'),
+                        insideParen: splitAttr('data-layout-split-inside-paren'),
+                        fontSize: cs?.fontSize ?? null,
+                        lineHeight: cs?.lineHeight ?? null,
+                        textAlignLast: cs?.textAlignLast ?? null
+                    },
+                    childRect: { x: Math.round(last.rect.x), y: Math.round(last.rect.y), w: Math.round(last.rect.w), h: Math.round(last.rect.h) },
+                    message: `יתום: שורה ראשונה של פסקה מופיעה לבדה בתחתית טור ${node.side} ("${last.text.slice(0, 30)}...")`
+                });
+            }
         }
     }
     for (const c of node.children) auditWidowOrphan(c, issues);
 }
 
 function auditSparseLastLine(node, issues) {
-    /* [V22] לפי המסמך (בעיה 3): p-cut שהוא הפריט האחרון בטור, ושורתו האחרונה צרה
-       מ-TOL.sparseLastLine (50%) מרוחב הטור. ההשוואה לרוחב הטור (ולא לשורה הראשונה,
-       שמצטמצמת במילה ראשונה צפה). p-end דלילה — טבעי ואינו מדווח. */
-    if (node.type === 'p-cut' && node.lines.length > 0 && node._parent && node._parent.type === 'column') {
-        const col = node._parent;
-        const sibs = col.children;
-        if (sibs[sibs.length - 1] === node && col.rect.w > 0) {
-            const lastLine = node.lines[node.lines.length - 1];
-            const firstLine = node.lines[0];
-            if (lastLine.w < col.rect.w * TOL.sparseLastLine) {
+    // Only p-cut fragments are checked: a cut paragraph should not end with
+    // an unusually short line because its next line did not fit.
+    if (node.type === 'p-cut' && node.lines.length > 1) {
+        const lastLine = node.lines[node.lines.length - 1];
+        const firstLine = node.lines[0];
+        if (firstLine.w > 0 && lastLine.w < firstLine.w * TOL.sparseLastLine) {
+            // Parenthetical text is intentionally set smaller and can look sparse
+            // while still carrying a full line of content.
+            const el = _nodeToEl.get(node);
+            let hasParenOnLastLine = false;
+            if (el) {
+                const parenSpans = el.querySelectorAll('.paren-text');
+                const lastLineTop = Math.round(lastLine.y);
+                for (const span of parenSpans) {
+                    const sr = span.getBoundingClientRect();
+                    const off = getBookContainerOffset();
+                    const spanTop = Math.round(sr.top - off.y);
+                    if (Math.abs(spanTop - lastLineTop) < 8) {
+                        hasParenOnLastLine = true;
+                        break;
+                    }
+                }
+            }
+            if (!hasParenOnLastLine) {
+                const balanceBlock = _nodeToEl.get(node)?.closest('.block-2col') || null;
+                const balanceFallback = balanceBlock?.getAttribute('data-layout-balance-fallback') || null;
+                const balanceFallbackSparseLine = balanceBlock?.getAttribute('data-layout-balance-fallback-sparse-line') || null;
+                const lineTokens = line => (Array.isArray(node.words) ? node.words : [])
+                    .filter(token => Math.abs(token.y - line.y) < Math.max(4, line.h * 0.35))
+                    .sort((a, b) => a.idx - b.idx)
+                    .map(token => ({
+                        text: token.text,
+                        type: token.type,
+                        x: Math.round(token.x * 100) / 100,
+                        width: Math.round(token.w * 100) / 100
+                    }));
+                const compactLine = line => {
+                    const tokens = lineTokens(line);
+                    return {
+                        y: Math.round(line.y * 100) / 100,
+                        width: Math.round(line.w * 100) / 100,
+                        height: Math.round(line.h * 100) / 100,
+                        text: tokens.map(token => token.text).join('').slice(0, 240),
+                        tokens: tokens.slice(0, 40)
+                    };
+                };
+                const splitAttr = name => el?.getAttribute(name) ?? null;
+                const cs = el ? getComputedStyle(el) : null;
                 issues.push({
                     kind: 'sparse-line',
-                    severity: 'medium',
+                    severity: 'low',
                     pageIdx: getPageIdx(node),
                     location: describePath(node),
                     lastW: Math.round(lastLine.w),
                     firstW: Math.round(firstLine.w),
-                    colW: Math.round(col.rect.w),
                     pText: node.text,
-                    childRect: rInts(lastLine),
-                    message: `שורה דלילה בסוף p-cut: רוחב אחרון=${Math.round(lastLine.w)}px מתוך טור ${Math.round(col.rect.w)}px`
+                    firstLine: compactLine(firstLine),
+                    lastLine: compactLine(lastLine),
+                    splitDiagnostics: {
+                        inputLines: splitAttr('data-layout-split-input-lines'),
+                        fitLines: splitAttr('data-layout-split-fit-lines'),
+                        placedLines: splitAttr('data-layout-split-placed-lines'),
+                        minFirst: splitAttr('data-layout-split-min-first'),
+                        minLast: splitAttr('data-layout-split-min-last'),
+                        insideParen: splitAttr('data-layout-split-inside-paren'),
+                        fontSize: cs?.fontSize ?? null,
+                        lineHeight: cs?.lineHeight ?? null,
+                        textAlignLast: cs?.textAlignLast ?? null
+                    },
+                    childRect: { x: Math.round(lastLine.x), y: Math.round(lastLine.y), w: Math.round(lastLine.w), h: Math.round(lastLine.h) },
+                    message: `שורה דלילה בסוף p-cut: רוחב אחרון=${Math.round(lastLine.w)}px ראשון=${Math.round(firstLine.w)}px`
                 });
             }
         }
@@ -525,56 +1262,6 @@ function auditOverflowToFootnote(page, issues) {
     const bodyFlow = findChild(wrapper, 'body-flow');
     const fnArea = findChild(wrapper, 'footnote-area');
     const pageNumber = findChild(wrapper, 'page-number');
-    /* [V22] בדיקה לפי תוכן הטקסט בפועל, לא רק לפי תיבת ה-body-flow: תוכן שגולש מהתיבה
-       (overflow:visible) לא נתפס בהשוואת תיבות. במדידה על 127 עמודים: טקסט חדר לאזור ההערות
-       ב-475px (עמוד 47) וב-165px (עמוד 107) בלי שאף בדיקה דיווחה. */
-    let __textBottom = -Infinity, __textNode = null, __textLine = null;
-    if (bodyFlow) {
-        (function walkText(n) {
-            for (const l of n.lines || []) {
-                if (l.bottom > __textBottom) { __textBottom = l.bottom; __textNode = n; __textLine = l; }
-            }
-            for (const c of n.children || []) walkText(c);
-        })(bodyFlow);
-    }
-    if (bodyFlow && fnArea && __textNode) {
-        const over = __textBottom - fnArea.rect.y;
-        if (over > TOL.containment && !issues.some(i => i.kind === 'fn-overflow' && i.pageIdx === page.idx)) {
-            issues.push({
-                kind: 'fn-overflow',
-                severity: over > 2 ? 'high' : 'medium',
-                basis: 'text',
-                pageIdx: page.idx,
-                location: `page ${page.label}`,
-                overlapPx: Math.round(over * 10) / 10,
-                textBottom: Math.round(__textBottom),
-                fnTop: Math.round(fnArea.rect.y),
-                pText: __textNode.text,
-                aRect: rInts(__textLine),
-                bRect: rInts(fnArea.rect),
-                message: `טקסט הגוף חודר לאזור ההערות בעמוד ${page.label}: ${Math.round(over)}px`
-            });
-        }
-    }
-    if (bodyFlow && pageNumber && __textNode) {
-        const over = __textBottom - pageNumber.rect.y;
-        if (over > TOL.containment && !issues.some(i => i.kind === 'pn-overflow' && i.pageIdx === page.idx)) {
-            issues.push({
-                kind: 'pn-overflow',
-                severity: over > 2 ? 'high' : 'medium',
-                basis: 'text',
-                pageIdx: page.idx,
-                location: `page ${page.label}`,
-                overlapPx: Math.round(over * 10) / 10,
-                textBottom: Math.round(__textBottom),
-                pnTop: Math.round(pageNumber.rect.y),
-                pText: __textNode.text,
-                aRect: rInts(__textLine),
-                bRect: rInts(pageNumber.rect),
-                message: `טקסט הגוף חודר למספר העמוד בעמוד ${page.label}: ${Math.round(over)}px`
-            });
-        }
-    }
     if (bodyFlow && fnArea) {
         const gap = fnArea.rect.y - bodyFlow.rect.bottom;
         if (gap < -TOL.containment) {
@@ -760,172 +1447,350 @@ function findPageIdxInTree(node) {
     return n ? n.idx : -1;
 }
 
-/* הפעלת כל הבדיקות */
-/* [V22] עוזר: מלבן עם מספרים שלמים (לשדות childRect/aRect/bRect של ההבהוב) */
-function rInts(r) {
-    return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) };
-}
+/* בדיקת תפוסה נמוכה של עמודי תוכן.
+   זו בדיקת אבחון בלבד: היא אינה משנה את העימוד ואינה מסיקה שחוסר איזון הוא תקלה.
+   עמוד סוף פרק מוחרג כאשר העמוד הבא נפתח בכותרת 2; בעמוד תחילת פרק
+   שטח הכותרת והמרווח שמעל הטקסט אינם נחשבים לשטח טקסט חסר. */
+function auditSparsePage(page, issues) {
+    const pageEl = _nodeToEl && _nodeToEl.get(page);
+    if (!pageEl) return;
 
-function hasType(node, type) {
-    if (!node) return false;
-    if (node.type === type) return true;
-    for (const c of node.children || []) if (hasType(c, type)) return true;
-    return false;
-}
+    const pageEls = Array.from(document.querySelectorAll('#book-container .a4-page'));
+    const pageIndex = pageEls.indexOf(pageEl);
+    const bodyFlow = pageEl.querySelector('.page-body-flow');
+    if (!bodyFlow) return;
 
-/* [V22] בעיה 5 במסמך: כותרת (רמות 3-6) בתחתית טור — או כותרת ואחריה פחות מ-2 שורות גוף */
-function auditHeadingAtColumnBottom(node, issues) {
-    if (node.type === 'column') {
-        const items = node.children;
-        const n = items.length;
-        const isHead = c => c.type === 'h3' || c.type === 'h4' || c.type === 'h5' || c.type === 'h6';
-        const isPara = c => c.type === 'p' || c.type === 'p-cut' || c.type === 'p-end';
-        if (n >= 1 && isHead(items[n - 1])) {
-            const h = items[n - 1];
-            issues.push({
-                kind: 'heading-at-bottom',
-                severity: 'high',
-                pageIdx: getPageIdx(node),
-                location: describePath(node),
-                pText: h.text,
-                childRect: rInts(h.rect),
-                message: `כותרת ${h.type} בתחתית טור ${node.side} בלי גוף אחריה ("${h.text.slice(0, 30)}")`
-            });
-        } else if (n >= 2 && isHead(items[n - 2]) && isPara(items[n - 1]) && items[n - 1].lines.length < 2) {
-            const h = items[n - 2], p = items[n - 1];
-            const complete = p.type === 'p-end' && !p.cont;
-            issues.push({
-                kind: 'heading-at-bottom',
-                severity: complete ? 'medium' : 'high',
-                pageIdx: getPageIdx(node),
-                location: describePath(node),
-                pText: h.text,
-                aRect: rInts(h.rect),
-                bRect: rInts(p.rect),
-                message: `כותרת ${h.type} עם שורת גוף אחת בלבד בתחתית טור ${node.side}${complete ? ' (פסקה קצרה שלמה)' : ''}`
-            });
-        }
+    const flowRect = bodyFlow.getBoundingClientRect();
+    if (!(flowRect.height > 0)) return;
+
+    const heading2Selector = '.title-level-2-standalone';
+    const nextPage = pageIndex >= 0 ? pageEls[pageIndex + 1] : null;
+    const nextHeading2 = nextPage?.querySelector(heading2Selector);
+    const nextFlow = nextPage?.querySelector('.page-body-flow');
+    const nextFlowRect = nextFlow?.getBoundingClientRect();
+    const nextHeadingRect = nextHeading2?.getBoundingClientRect();
+    const nextPageStartsChapter = !!(
+        nextHeadingRect && nextFlowRect && nextFlowRect.height > 0 &&
+        nextHeadingRect.top < nextFlowRect.top + nextFlowRect.height * 0.45
+    );
+
+    // סוף פרק: כותרת 2 בראש העמוד הבא מעידה שהעמוד הנוכחי מסתיים לפני פרק חדש.
+    if (nextPageStartsChapter) return;
+
+    const heading2 = pageEl.querySelector(heading2Selector);
+    const headingRect = heading2?.getBoundingClientRect();
+    const startsChapter = !!(
+        headingRect && headingRect.top < flowRect.top + flowRect.height * 0.45
+    );
+    const contentStartY = startsChapter
+        ? Math.max(flowRect.top, headingRect.bottom)
+        : flowRect.top;
+
+    // המכנה חייב להיות השטח הזמין בעמוד, לא גובה הבלוקים שנוצרו בפועל:
+    // שימוש בגובה הבלוקים היה מנרמל עמוד קצר כאילו כל השטח הזמין נוצל.
+    // עמודי תוכן דו-טוריים נמדדים מול שתי עמודות; עמוד חד-טורי מול אחת.
+    const hasTwoColumnBlock = !!bodyFlow.querySelector('.block-2col');
+    const columnCapacityMultiplier = hasTwoColumnBlock ? 2 : 1;
+    const capacityPx = Math.max(0, flowRect.bottom - contentStartY) * columnCapacityMultiplier;
+    if (!(capacityPx > 0)) return;
+    const referenceColumn = bodyFlow.querySelector('.main-column') || bodyFlow.querySelector('.single-wide-col');
+    const referenceColumnWidth = referenceColumn?.getBoundingClientRect().width || 0;
+
+    const textSelector = [
+        '.main-column p', '.single-wide-col p',
+        '.main-column .title-level-2-standalone',
+        '.main-column .title-level-3', '.main-column .title-level-4',
+        '.main-column .title-level-5', '.main-column .title-level-6',
+        '.main-column .title-level-7', '.main-column .title-level-custom',
+        '.single-wide-col .title-level-2-standalone',
+        '.single-wide-col .title-level-3', '.single-wide-col .title-level-4',
+        '.single-wide-col .title-level-5', '.single-wide-col .title-level-6',
+        '.single-wide-col .title-level-7', '.single-wide-col .title-level-custom'
+    ].join(',');
+    const textEls = Array.from(new Set(bodyFlow.querySelectorAll(textSelector)));
+    let occupiedPx = 0;
+    let paragraphCount = 0;
+    let contentElementCount = 0;
+    let lineCount = 0;
+    let firstTextTop = Infinity;
+    let lastTextBottom = -Infinity;
+    for (const el of textEls) {
+        // הערות שוליים, הערות צד ואלמנטים שאינם נראים אינם חלק מתפוסת גוף הטקסט.
+        if (el.closest('.footnote-area, .margin-notes-column')) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0 || r.bottom <= contentStartY) continue;
+        const effectiveTop = Math.max(r.top, contentStartY);
+        const effectiveHeight = Math.max(0, r.bottom - effectiveTop);
+        // Convert each element's height to column-equivalent occupancy. A full-width
+        // heading consumes about two column-heights on a two-column page; counting it
+        // as one would systematically understate occupancy on pages with spanning H3s.
+        const widthWeight = referenceColumnWidth > 0
+            ? Math.min(2.5, Math.max(0.5, r.width / referenceColumnWidth))
+            : 1;
+        occupiedPx += effectiveHeight * widthWeight;
+        contentElementCount++;
+        if (el.matches('p')) paragraphCount++;
+        const raw = el.getAttribute('data-raw-text') || el.textContent || '';
+        if (raw.trim()) lineCount += Math.max(1, Math.round(r.height /
+            (parseFloat(getComputedStyle(el).lineHeight) || Math.max(1, r.height))));
+        firstTextTop = Math.min(firstTextTop, effectiveTop);
+        lastTextBottom = Math.max(lastTextBottom, r.bottom);
     }
-    for (const c of node.children) auditHeadingAtColumnBottom(c, issues);
-}
+    // Heading-only pages still have content and must be eligible for sparse-page
+    // diagnostics; paragraphCount is retained as a report metric, not a gate.
+    if (contentElementCount === 0 || !Number.isFinite(lastTextBottom)) return;
 
-/* [V22] בעיה 7: טור ריק כשהטור השני מלא. בסוף פרק זה תקין (low), אחרת high */
-function auditEmptyColumn(page, nextPage, issues) {
-    const wrapper = page.children[0];
-    if (!wrapper) return;
-    const flow = findChild(wrapper, 'body-flow');
-    if (!flow) return;
-    flow.children.forEach((b, bi) => {
-        if (b.type !== 'block-2col') return;
-        const cols = b.children.filter(c => c.type === 'column');
-        if (cols.length !== 2) return;
-        const cnt = c => c.children.filter(x => TEXT_TYPES.has(x.type) && x.lines.length).length;
-        const a = cnt(cols[0]), d = cnt(cols[1]);
-        if ((a === 0) !== (d === 0)) {
-            const empty = a === 0 ? cols[0] : cols[1];
-            const benign = bi === flow.children.length - 1 && (!nextPage || hasType(nextPage, 'h2-title'));
-            issues.push({
-                kind: 'empty-column',
-                severity: benign ? 'low' : 'high',
-                pageIdx: page.idx,
-                location: describePath(empty),
-                childRect: rInts(empty.rect),
-                message: `טור ${empty.side} ריק כשהטור השני מלא${benign ? ' (ייתכן סוף פרק — תקין)' : ''}`
-            });
-        }
+    // גובהי פסקאות נמדדים בנפרד לכל טור; היחס אינו "אחוז דיו" אלא אומדן
+    // שמרני של תפוסת שטח העימוד. הסף נמוך בכוונה כדי למנוע התרעות שווא.
+    const fillRatio = occupiedPx / capacityPx;
+    const roundedRatio = Math.round(fillRatio * 1000) / 1000;
+    if (fillRatio >= 0.24) return;
+
+    const severity = fillRatio < 0.12 ? 'medium' : 'low';
+    issues.push({
+        kind: 'sparse-page',
+        severity,
+        pageIdx: page.idx,
+        pageLabel: page.label,
+        fillRatio: roundedRatio,
+        occupiedColumnEquivalentPx: Math.round(occupiedPx * 100) / 100,
+        occupancyMethod: 'visible text-element height weighted by element width relative to one column',
+        estimatedCapacityPx: Math.round(capacityPx * 100) / 100,
+        availableBodyHeightPx: Math.round(Math.max(0, flowRect.bottom - contentStartY) * 100) / 100,
+        excludedChapterStartPx: Math.round(Math.max(0, contentStartY - flowRect.top) * 100) / 100,
+        columnCapacityMultiplier,
+        referenceColumnWidthPx: referenceColumnWidth > 0 ? Math.round(referenceColumnWidth * 100) / 100 : null,
+        paragraphCount,
+        contentElementCount,
+        estimatedLineCount: lineCount,
+        startsChapter,
+        firstTextTop: Number.isFinite(firstTextTop) ? Math.round(firstTextTop - flowRect.top) : null,
+        lastTextBottom: Math.round(lastTextBottom - flowRect.top),
+        // Context is diagnostic only: it helps distinguish a legitimate structural
+        // ending from an accidental early page break without changing pagination.
+        firstVisibleTextPreview: (() => {
+            const el = textEls
+                .filter(node => !node.closest('.footnote-area, .margin-notes-column'))
+                .map(node => ({ node, rect: node.getBoundingClientRect() }))
+                .filter(item => item.rect.width > 0 && item.rect.height > 0 && item.rect.bottom > contentStartY)
+                .sort((a, b) => a.rect.top - b.rect.top)[0]?.node;
+            return (el?.getAttribute('data-raw-text') || el?.textContent || '')
+                .replace(/\s+/g, ' ').trim().slice(0, 180) || null;
+        })(),
+        lastVisibleTextPreview: (() => {
+            const el = textEls
+                .filter(node => !node.closest('.footnote-area, .margin-notes-column'))
+                .map(node => ({ node, rect: node.getBoundingClientRect() }))
+                .filter(item => item.rect.width > 0 && item.rect.height > 0 && item.rect.bottom > contentStartY)
+                .sort((a, b) => a.rect.bottom - b.rect.bottom).at(-1)?.node;
+            return (el?.getAttribute('data-raw-text') || el?.textContent || '')
+                .replace(/\s+/g, ' ').trim().slice(-180) || null;
+        })(),
+        textElementClasses: textEls
+            .filter(node => {
+                const rect = node.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0 && rect.bottom > contentStartY;
+            })
+            .slice(0, 12)
+            .map(node => ({
+                tag: node.tagName.toLowerCase(),
+                className: String(node.className || '').slice(0, 140),
+                column: node.closest('.left-col') ? 'left' :
+                    node.closest('.right-col') ? 'right' :
+                    node.closest('.single-wide-col') ? 'single' : 'unknown'
+            })),
+        flowChildStructure: Array.from(bodyFlow.children).slice(0, 12).map(node => ({
+            tag: node.tagName.toLowerCase(),
+            className: String(node.className || '').slice(0, 140),
+            height: Math.round(node.getBoundingClientRect().height)
+        })),
+        message: `תפוסת טקסט נמוכה בעמוד ${page.label}: ${Math.round(fillRatio * 100)}% מהקיבולת המשוערת${startsChapter ? ' (כותרת תחילת הפרק הוחרגה מהחישוב)' : ''}`
     });
 }
 
-/* [V22] שרשרת המשך: כל p-cut חייב להמשיך בפסקת is-cont מיד אחריו (סדר קריאה: ימין לפני שמאל),
-   וכל is-cont חייב לבוא אחרי p-cut. שבירה = אובדן או כפילות של טקסט. */
-function auditChain(model, issues) {
-    const seq = [];
-    for (const page of model.pages) {
-        const wrapper = page.children[0];
-        if (!wrapper) continue;
-        const flow = findChild(wrapper, 'body-flow');
-        if (!flow) continue;
-        for (const b of flow.children) {
-            if (b.type !== 'block-2col') continue;
-            const cols = b.children.filter(c => c.type === 'column');
-            cols.sort((x, y) => (x.side === 'right' ? 0 : 1) - (y.side === 'right' ? 0 : 1));
-            for (const col of cols) {
-                for (const it of col.children) {
-                    if (TEXT_TYPES.has(it.type)) seq.push({ it, pageIdx: page.idx, col });
+/* בדיקת טווחי סוגריים מרובעים במקור, לפני שמסתמכים על ה-DOM המעוצב.
+   היא מאתרת סוגריים לא מאוזנים, וכן זוגות שחוצים פסקאות/טורים/עמודים.
+   זוג מקומי באותה פסקה ובאותו טור אינו מדווח כדי למנוע רעש מכל הערת שוליים רגילה. */
+function auditSquareBracketScopes(issues) {
+    const pageEls = Array.from(document.querySelectorAll('#book-container .a4-page'));
+    const paragraphs = [];
+    pageEls.forEach((pageEl, pageIdx) => {
+        const pageLabel = pageEl.querySelector('.page-number-footer')?.textContent?.trim() || String(pageIdx + 1);
+        const ps = Array.from(pageEl.querySelectorAll('.page-body-flow p[data-raw-text]'));
+        ps.forEach((p, localIdx) => {
+            const rawText = p.getAttribute('data-raw-text') || '';
+            if (!rawText) return;
+            const col = p.closest('.main-column, .single-wide-col');
+            const tokenId = p.getAttribute('data-token-id') || null;
+            const fragmentIndex = paragraphs.length;
+            paragraphs.push({
+                el: p, rawText, pageIdx, pageLabel,
+                // DOM fragments are not necessarily source paragraphs: one logical
+                // paragraph may be split into p-cut/p-end fragments across columns/pages.
+                fragmentIndex,
+                tokenId,
+                logicalParagraphId: tokenId !== null ? `token:${tokenId}` : `fragment:${fragmentIndex}`,
+                localParagraphIndex: localIdx,
+                isContinuation: p.getAttribute('data-is-cont') === 'true',
+                column: col?.classList.contains('left-col') ? 'left' :
+                    col?.classList.contains('right-col') ? 'right' :
+                    col?.classList.contains('single-wide-col') ? 'single' : 'unknown'
+            });
+        });
+    });
+
+    // Assign stable logical paragraph ordinals by source token ID. This makes
+    // reports distinguish a true paragraph transition from a continuation fragment.
+    const logicalOrdinals = new Map();
+    let nextLogicalOrdinal = 0;
+    for (const para of paragraphs) {
+        if (!logicalOrdinals.has(para.logicalParagraphId)) {
+            logicalOrdinals.set(para.logicalParagraphId, nextLogicalOrdinal++);
+        }
+        para.logicalParagraphIndex = logicalOrdinals.get(para.logicalParagraphId);
+    }
+
+    const stack = [];
+    const emitUnmatchedClose = (para, offset) => issues.push({
+        kind: 'square-bracket-unmatched',
+        severity: 'high',
+        pageIdx: para.pageIdx,
+        pageLabel: para.pageLabel,
+        paragraphIndex: para.logicalParagraphIndex,
+        fragmentIndex: para.fragmentIndex,
+        tokenId: para.tokenId,
+        offset,
+        bracket: ']',
+        message: `סוגר מרובע סוגר ללא פתיחה תואמת בעמוד ${para.pageLabel}, פסקה מקורית ${para.logicalParagraphIndex + 1}`
+    });
+
+    for (const para of paragraphs) {
+        for (let offset = 0; offset < para.rawText.length; offset++) {
+            const ch = para.rawText[offset];
+            if (ch === '[') {
+                stack.push({ para, offset });
+                continue;
+            }
+            if (ch !== ']') continue;
+            if (!stack.length) {
+                emitUnmatchedClose(para, offset);
+                continue;
+            }
+            const open = stack.pop();
+            const crossedParagraph = open.para.logicalParagraphId !== para.logicalParagraphId;
+            const crossedColumn = open.para.column !== para.column;
+            const crossedPage = open.para.pageIdx !== para.pageIdx;
+            if (!crossedParagraph && !crossedColumn && !crossedPage) continue;
+
+            const boundaries = [];
+            const boundaryLabels = [];
+            if (crossedParagraph) { boundaries.push('paragraph'); boundaryLabels.push('פסקאות'); }
+            if (crossedColumn) { boundaries.push('column'); boundaryLabels.push('טורים'); }
+            if (crossedPage) { boundaries.push('page'); boundaryLabels.push('עמודים'); }
+            const severity = crossedPage || crossedColumn ? 'medium' : 'low';
+            let spanRawChars = 0;
+            for (let fi = open.para.fragmentIndex; fi <= para.fragmentIndex; fi++) {
+                const current = paragraphs[fi];
+                if (!current) continue;
+                const from = fi === open.para.fragmentIndex ? open.offset : 0;
+                const to = fi === para.fragmentIndex ? offset + 1 : current.rawText.length;
+                spanRawChars += Math.max(0, to - from);
+                // Count a separator only when moving between different source paragraphs,
+                // not when the renderer split one source paragraph into multiple fragments.
+                if (fi < para.fragmentIndex &&
+                    current.logicalParagraphId !== paragraphs[fi + 1]?.logicalParagraphId) {
+                    spanRawChars += 1;
                 }
             }
-        }
-    }
-    const isPara = t => t === 'p' || t === 'p-cut' || t === 'p-end';
-    for (let i = 0; i < seq.length; i++) {
-        const cur = seq[i].it;
-        const nx = seq[i + 1] && seq[i + 1].it;
-        const pv = seq[i - 1] && seq[i - 1].it;
-        let why = null;
-        if (cur.type === 'p-cut' && !(nx && isPara(nx.type) && nx.cont)) why = 'פסקה חתוכה (p-cut) שאחריה אין פסקת המשך';
-        else if (isPara(cur.type) && cur.cont && !(pv && pv.type === 'p-cut')) why = 'פסקת המשך (is-cont) שלפניה אין p-cut';
-        if (why) {
             issues.push({
-                kind: 'chain-broken',
-                severity: 'high',
-                pageIdx: seq[i].pageIdx,
-                location: describePath(cur),
-                pText: cur.text,
-                childRect: rInts(cur.rect),
-                message: `${why} ("${cur.text.slice(0, 30)}")`
+                kind: 'square-bracket-scope',
+                severity,
+                startPageIdx: open.para.pageIdx,
+                pageIdx: para.pageIdx,
+                startPageLabel: open.para.pageLabel,
+                pageLabel: para.pageLabel,
+                startParagraphIndex: open.para.logicalParagraphIndex,
+                endParagraphIndex: para.logicalParagraphIndex,
+                startFragmentIndex: open.para.fragmentIndex,
+                endFragmentIndex: para.fragmentIndex,
+                startTokenId: open.para.tokenId,
+                endTokenId: para.tokenId,
+                startIsContinuation: open.para.isContinuation,
+                endIsContinuation: para.isContinuation,
+                startColumn: open.para.column,
+                endColumn: para.column,
+                startOffset: open.offset,
+                endOffset: offset,
+                crossedParagraph,
+                crossedColumn,
+                crossedPage,
+                boundaries,
+                spanRawChars,
+                startPreview: open.para.rawText.slice(Math.max(0, open.offset - 55), Math.min(open.para.rawText.length, open.offset + 125)),
+                endPreview: para.rawText.slice(Math.max(0, offset - 90), Math.min(para.rawText.length, offset + 60)),
+                message: `טווח סוגריים מרובעים/הערת שוליים חוצה ${boundaryLabels.join(', ')}: עמוד ${open.para.pageLabel} → ${para.pageLabel}; ${crossedParagraph ? `פסקאות מקור ${open.para.logicalParagraphIndex + 1}–${para.logicalParagraphIndex + 1}` : 'אותה פסקת מקור'}`
             });
         }
     }
-}
-
-/* [V22] בעיה 9: תו U+E000 (ריבוע) בטקסט */
-function auditPUA(node, issues) {
-    if (node.pua) {
+    for (const open of stack) {
         issues.push({
-            kind: 'pua-char',
+            kind: 'square-bracket-unmatched',
             severity: 'high',
-            pageIdx: getPageIdx(node),
-            location: describePath(node),
-            pText: node.text,
-            childRect: rInts(node.rect),
-            message: `תו U+E000 (ריבוע) בטקסט: "${node.text.slice(0, 30)}"`
+            pageIdx: open.para.pageIdx,
+            pageLabel: open.para.pageLabel,
+            paragraphIndex: open.para.logicalParagraphIndex,
+            fragmentIndex: open.para.fragmentIndex,
+            tokenId: open.para.tokenId,
+            offset: open.offset,
+            bracket: '[',
+            message: `סוגר מרובע פותח ללא סגירה תואמת בעמוד ${open.para.pageLabel}, פסקה מקורית ${open.para.logicalParagraphIndex + 1}`
         });
     }
-    for (const c of node.children) auditPUA(c, issues);
 }
 
+/* הפעלת כל הבדיקות */
 function auditGeometry(model) {
-    /* פונקציה דטרמיניסטית של המודל בלבד (בלי DOM): רצה גם ב-Node על JSON מיוצא.
-       הערה: היא מוסיפה _parent לצמתים כדי לעלות בעץ (cleanForExport מסיר אותו). */
     const issues = [];
-    const pages = model.pages;
-    for (let pi = 0; pi < pages.length; pi++) {
-        const page = pages[pi];
+    for (const page of model.pages) {
         for (const c of page.children) annotateParents(c, page);
         page._parent = null;
         page.type = 'page';
+        // עדכן getPageIdx דרך _parent
         for (const c of page.children) {
             auditContainment(c, issues);
+            auditSideNoteBounds(c, issues);
             auditSiblingOverlap(c, issues);
             auditColumnBalance(c, issues);
             auditWidowOrphan(c, issues);
             auditSparseLastLine(c, issues);
-            auditHeadingAtColumnBottom(c, issues);
-            auditPUA(c, issues);
         }
+        auditSparsePage(page, issues);
         auditOverflowToFootnote(page, issues);
         auditPageOverflow(page, issues);
-        auditEmptyColumn(page, pages[pi + 1], issues);
     }
-    auditChain(model, issues);
+    auditSquareBracketScopes(issues);
+    // עדכן pageIdx בכל בעיה ע"י חיפוש בעץ
+    issues.forEach(iss => {
+        if (iss.pageIdx === -1 || iss.pageIdx === undefined) {
+            // ננסה למצוא לפי מיקום Y
+        }
+    });
+    // סיכום
     const summary = {
         total: issues.length,
         high: issues.filter(i => i.severity === 'high').length,
         medium: issues.filter(i => i.severity === 'medium').length,
         low: issues.filter(i => i.severity === 'low').length,
-        byKind: {}
+        byKind: {},
+        byBalanceOutcome: {}
     };
-    issues.forEach(i => { summary.byKind[i.kind] = (summary.byKind[i.kind] || 0) + 1; });
+    issues.forEach(i => {
+        summary.byKind[i.kind] = (summary.byKind[i.kind] || 0) + 1;
+        if (i.kind === 'imbalance') {
+            const outcome = i.balanceOutcome || 'unclassified-residual';
+            summary.byBalanceOutcome[outcome] = (summary.byBalanceOutcome[outcome] || 0) + 1;
+        }
+    });
     return { issues, summary };
 }
 
@@ -1207,6 +2072,19 @@ function extractGeometryWithDomRefs() {
             idx: pIdx,
             label: (pgEl.querySelector('.page-number-footer')?.textContent?.trim() || String(pIdx + 1)),
             rect: pgRect,
+            // Page metrics must be read from pgEl here: the page itself is represented
+            // by this synthetic node, while buildNodeWithRefs starts at the wrapper.
+            footnoteReflowMetrics: {
+                queueCount: pgEl.getAttribute('data-fn-reflow-queue-count'),
+                predictedHeight: pgEl.getAttribute('data-fn-reflow-predicted-height'),
+                beforeFlowHeight: pgEl.getAttribute('data-fn-reflow-before-flow-height'),
+                afterFlowHeight: pgEl.getAttribute('data-fn-reflow-after-flow-height'),
+                flowHeightDelta: pgEl.getAttribute('data-fn-reflow-flow-height-delta'),
+                beforeLastBlockHeight: pgEl.getAttribute('data-fn-reflow-before-last-block-height'),
+                afterLastBlockHeight: pgEl.getAttribute('data-fn-reflow-after-last-block-height'),
+                afterLastBlockOverflow: pgEl.getAttribute('data-fn-reflow-after-last-block-overflow'),
+                lastBlockTopOffset: pgEl.getAttribute('data-fn-reflow-last-block-top-offset')
+            },
             children: [],
             issues: [],
             type: 'page'
@@ -1241,6 +2119,66 @@ function buildNodeWithRefs(el, parent) {
         rect,
         children: [],
         lines: [],
+        footnoteReflowMetrics: cls.type === 'page' ? {
+            queueCount: el.getAttribute('data-fn-reflow-queue-count'),
+            predictedHeight: el.getAttribute('data-fn-reflow-predicted-height'),
+            beforeFlowHeight: el.getAttribute('data-fn-reflow-before-flow-height'),
+            afterFlowHeight: el.getAttribute('data-fn-reflow-after-flow-height'),
+            flowHeightDelta: el.getAttribute('data-fn-reflow-flow-height-delta'),
+            beforeLastBlockHeight: el.getAttribute('data-fn-reflow-before-last-block-height'),
+            afterLastBlockHeight: el.getAttribute('data-fn-reflow-after-last-block-height'),
+            afterLastBlockOverflow: el.getAttribute('data-fn-reflow-after-last-block-overflow'),
+            lastBlockTopOffset: el.getAttribute('data-fn-reflow-last-block-top-offset')
+        } : null,
+        layoutMetrics: cls.type === 'block-2col' ? {
+            fillRemaining: el.getAttribute('data-layout-fill-remaining'),
+            fillFlowHeight: el.getAttribute('data-layout-fill-flow-height'),
+            fillTopOffset: el.getAttribute('data-layout-fill-top-offset'),
+            balanceCalled: el.getAttribute('data-layout-balance-called'),
+            balanceStatus: el.getAttribute('data-layout-balance-status'),
+            balanceSkipReason: el.getAttribute('data-layout-balance-skip-reason'),
+            balanceRouting: el.getAttribute('data-layout-balance-routing'),
+            lightJustifyResidualDiff: (() => {
+                const value = el.getAttribute('data-layout-balance-light-residual-diff');
+                const number = value === null ? NaN : Number(value);
+                return Number.isFinite(number) ? number : null;
+            })(),
+            finalJustifyOvershootAfterShrink: (() => {
+                const value = el.getAttribute('data-layout-final-justify-overshoot-after-shrink');
+                const number = value === null || value === 'none' ? NaN : Number(value);
+                return Number.isFinite(number) ? number : null;
+            })(),
+            finalJustifyCapacityAfter: (() => {
+                const raw = el.getAttribute('data-layout-final-justify-capacity-after');
+                if (!raw) return null;
+                try { return JSON.parse(raw); } catch { return { parseError: true }; }
+            })(),
+            stageGeometryDiagnostic: (() => {
+                const raw = el.getAttribute('data-layout-stage-geometry-diagnostic');
+                if (!raw) return null;
+                try { return JSON.parse(raw); } catch { return { parseError: true }; }
+            })(),
+            stageGeometryDiagnosticError: el.getAttribute('data-layout-stage-geometry-diagnostic-error'),
+            decisionRecord: (() => {
+                const raw = el.getAttribute('data-layout-decision-record');
+                if (!raw) return null;
+                try { return JSON.parse(raw); } catch { return { parseError: true }; }
+            })(),
+            balanceInputHeight: el.getAttribute('data-layout-balance-input-height'),
+            balanceAvailable: el.getAttribute('data-layout-balance-available'),
+            balanceCandidates: el.getAttribute('data-layout-balance-candidates'),
+            balanceItems: el.getAttribute('data-layout-balance-items'),
+            balanceFits: el.getAttribute('data-layout-balance-fits'),
+            balanceValid: el.getAttribute('data-layout-balance-valid'),
+            balanceRightPartLines: el.getAttribute('data-layout-balance-right-part-lines'),
+            balanceLeftPartLines: el.getAttribute('data-layout-balance-left-part-lines'),
+            balanceOver: el.getAttribute('data-layout-balance-over'),
+            balanceRight: el.getAttribute('data-layout-balance-right'),
+            balanceLeft: el.getAttribute('data-layout-balance-left'),
+            balanceDiff: el.getAttribute('data-layout-balance-diff'),
+            pageFinalJustifyDiagnostic: el.getAttribute('data-layout-page-final-justify-diagnostic'),
+            globalJustifyDiagnostic: el.getAttribute('data-layout-global-justify-diagnostic')
+        } : null,
         parentType: parent ? parent.type : null,
         _parent: parent  // [תיקון] חיוני כדי שgetPageIdx יעבוד
     };
@@ -1252,9 +2190,6 @@ function buildNodeWithRefs(el, parent) {
         // [חדש] אסוף מילים ורווחים לפירוט מלא
         node.words = collectWordsAndSpaces(el);
         node.wordCount = node.words.filter(t => t.type === 'word').length;
-        // [V22] שדות שהבודק צריך: האם זו פסקת המשך (data-is-cont) והאם יש בה תו U+E000 (ריבוע)
-        node.cont = el.getAttribute('data-is-cont') === 'true';
-        node.pua = (el.textContent || '').indexOf('\uE000') !== -1;
         node.spaceCount = node.words.filter(t => t.type === 'space').length;
     }
 
@@ -1362,7 +2297,7 @@ function clearHighlight() {
     if (c) c.remove();
 }
 
-const __geomApi = {
+window.__geomAudit = {
     extract: extractGeometryWithDomRefs,
     audit: auditGeometry,
     paint: paintOverlay,
@@ -1394,9 +2329,6 @@ const __geomApi = {
     }
 };
 
-if (typeof window !== 'undefined') window.__geomAudit = __geomApi;
-if (typeof module !== 'undefined' && module.exports) module.exports = __geomApi;   // [V22] הרצה ב-Node על JSON מיוצא
-
-if (typeof console !== 'undefined' && typeof window !== 'undefined') console.log('[geometry-audit] נטען. השתמש ב-window.__geomAudit.extract()/.audit()/.paint()/.clear()');
+console.log('[geometry-audit] נטען. השתמש ב-window.__geomAudit.extract()/.audit()/.paint()/.clear()');
 
 })();

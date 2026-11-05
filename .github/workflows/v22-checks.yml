@@ -44,10 +44,10 @@ jobs:
       - name: Determinism self-test (engine settles fonts by itself, no external warm-up)
         run: |
           mkdir -p artifacts
-          node scripts/layout-ab.mjs --a . --text mid_long_test_text.txt --lines 600 --audit geometry-audit.js --selftest --no-warmup 2>&1 | tee artifacts/selftest.txt
+          node scripts/layout-ab.mjs --a . --text mid_long_test_text.txt --lines 600 --audit geometry-audit.js,geometry-audit-extra.js --selftest --no-warmup 2>&1 | tee artifacts/selftest.txt
       - name: Diagnostic report and trace check
         run: |
-          node scripts/layout-explain.mjs --root . --text mid_long_test_text.txt --lines 600 --audit geometry-audit.js --top 8 --json artifacts/explain.json 2>&1 | tee artifacts/explain.txt
+          node scripts/layout-explain.mjs --root . --text mid_long_test_text.txt --lines 600 --audit geometry-audit.js,geometry-audit-extra.js --top 8 --json artifacts/explain.json 2>&1 | tee artifacts/explain.txt
       - name: Job summary
         if: always()
         run: |
@@ -105,7 +105,7 @@ jobs:
       - name: A/B on a series of small setting variants
         run: |
           mkdir -p artifacts
-          node head/scripts/layout-ab.mjs --a base --b head --text head/mid_long_test_text.txt --lines 600 --variants 3 --audit head/geometry-audit.js 2>&1 | tee artifacts/ab.txt
+          node head/scripts/layout-ab.mjs --a base --b head --text head/mid_long_test_text.txt --lines 600 --variants 3 --audit head/geometry-audit.js,head/geometry-audit-extra.js 2>&1 | tee artifacts/ab.txt
       - name: Job summary
         if: always()
         run: |

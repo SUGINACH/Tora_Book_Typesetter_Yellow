@@ -1,4 +1,79 @@
+## 2026-10-26 — Documentation consolidation
+
+Created `V23/CONSOLIDATED_ENGINEERING_HISTORY.md` from the six conversation exports and supplemented it with documented findings from the worklog, dependency map, stability plan, and technical history. Added sections 9–10 to `V23/TECHNICAL_HISTORY_AND_ARCHITECTURE.md` covering source provenance, code responsibility, geometry/test coverage, decision-ledger invariants, CI gates, and open findings. Updated `V23/TRANSCRIPT_DELETION_AUDIT.md`. Documentation only; no engine code changes and no V21 changes. Keep original transcripts until attachment review and an independent archive are complete.
+
+---
+
+## 2026-10-26 — Final transcript coverage audit (documentation-only; V23)
+
+### Scope
+- Compared all six root-level transcript files `שיחה_מספר_1.md`–`שיחה_מספר_6.md` against `V23/TECHNICAL_HISTORY_AND_ARCHITECTURE.md`, this worklog, `LAYOUT_DEPENDENCY_MAP.md`, and `V23/PLAN_STABILITY_COMPLETENESS_TRANSPARENCY.md`.
+- Captured source blob SHAs, character counts, and line counts in `V23/TRANSCRIPT_DELETION_AUDIT.md`.
+- Added the final audit to `V23/TECHNICAL_HISTORY_AND_ARCHITECTURE.md`, including the user-proposed Baseline=100% optimization spec and why its numeric ranges/accumulative-step strategy are not accepted as a global policy.
+
+### Main findings retained
+- Transcript 1: cross-column/page and nested-parenthesis requirements; global source-order delimiter state as target architecture.
+- Transcript 2: historical long audit with 601 pages and 216 findings (15 HIGH, 56 MEDIUM, 145 LOW); 13 body-flow overflows and 2 side-note boundary findings; CLI success did not imply long-audit success.
+- Transcript 3: historical p. 95 column heights around 464/421px; late justification rollback diagnostics; distinction between interim and final geometry.
+- Transcript 4: render-path mismatch, decision-record completeness, determinism signature, and diagnostic example 293/307px predicted versus 314/307px final; functions to trace include `renderSingleItemFast()`, `appendItemFinal()`, `applyDelimiterStyles()`, `createDropWord()`.
+- Transcript 5: parenthesis-font counterfactual eligibility false positive (eligible cases existed but 0 actually tested in an earlier run); later 4/4 tested; external SVG ornament needed explicit loading from `header_ornaments.json`; smoke and long are separate gates.
+- Transcript 6: optimization-spec rejection rationale; six empty-column cases; explicit distinction between decision-contract fixes and a visually validated structural fallback; four decision-contract fixes.
+
+### Evidence and status distinctions
+- The worklog head audit entry remains the 629-page run at engine/CLI commit `27e40d6713d2ee9702349f4bfad2fb3cb30c30c0`; transcript 6 also reports later run states including 643 pages and 859 decisions. Do not merge these numbers into a single baseline. Verify V23 HEAD and same-SHA workflow artifacts before asserting current status.
+- No engine code was changed by this transcript audit; documentation only.
+- Decision: **do not delete the six transcripts yet**. Keep them until the audit report's deletion gates are met and an independent archive exists.
+- Branch policy preserved: V23 only; no merge or change to V21.
+
+### Artifacts
+- `V23/TRANSCRIPT_DELETION_AUDIT.md` — per-transcript coverage, source identities, chronology conflicts, deletion gates.
+- `V23/TECHNICAL_HISTORY_AND_ARCHITECTURE.md` — section 8 added for final audit findings.
+- `LAYOUT_DEPENDENCY_MAP.md` — section 12 added to link the audit and preserve the no-deletion decision.
+
+---
+
 # Worklog
+
+## 2026-10-25 — V23 geometry audit: validated counterfactual eligibility and remaining findings
+
+### Latest full-document audit (engine/CLI commit `27e40d6713d2ee9702349f4bfad2fb3cb30c30c0`)
+- Full audit of `very_long_test_text.txt` completed successfully: 629 pages, 854 two-column wrappers, and 854 valid decision records.
+- Repeat-render determinism: PASS; both renders produced 629 pages and identical SHA-256 hash.
+- Instrumentation integrity and decision diagnostic gate: PASS; no runtime errors.
+- Source conservation: 3,081/3,081 paragraphs; 524/524 headings; 2,043/2,043 side notes. No missing or mismatched content.
+- Footnote measurement: exact queue/measurement matches on 60/60 pages; maximum measured difference 0px.
+- Parenthesis scope map: 2,490 paired parentheses; 87 cross-column pairs; 46 cross-page pairs; 3 unmatched closes; 0 unmatched opens at document end.
+- Local parenthesis-font counterfactual: **4 eligible / 4 tested**, with 0 restore mismatches and 0 errors. The one-sided false-positive block was correctly excluded.
+- Current issue inventory: 10 low-severity imbalance findings and 4 low-severity note-marker containment-rounding findings. No high- or medium-severity findings.
+
+### Counterfactual results (diagnostic only; production layout is restored exactly)
+- Page `רלא` (index 232): 479/484px → same-font 500/500px. Equal heights require the block to grow about 16px; not an automatic production fix.
+- Page `תקלד` (index 535): 71/66px → same-font 71/65px; residual worsens from 5px to 6px.
+- Page `תקלה` (index 536): 71/65px → same-font 93/65px; right-side reflow increases residual from 6px to 28px.
+- Page `תקצ` (index 591): 157/152px → same-font 179/152px; right-side reflow increases residual from 5px to 27px.
+- Interpretation: parenthesis font metrics materially affect wrapping in two cases, but uniform font treatment does not solve the problem generally. Do not remove the typography rule or alter stretch limits without a separate controlled experiment.
+
+### Remaining imbalance classification
+- 8 cases are capacity-limited residuals. Their short columns have exhausted the currently permitted line-height expansion; for example, a 2-line column has remaining expansion capacity of about 15px while reaching the configured per-line cap. This is a real policy boundary, not evidence by itself that the configured cap is wrong.
+- 2 cases are accepted by the current light-justify policy despite 5px residuals. They remain in the report inventory and are not suppressed.
+- Next experiment should compare controlled alternatives (including whether the taller column can be reduced without harming line quality) against the current result; do not widen caps blindly.
+
+### Remaining note-marker findings
+- Four findings show a superscript note-marker box extending 1.3125px above the paragraph line box.
+- The audit currently classifies these as low-severity `containment-rounding`, with an explicit explanation that inline/superscript marker boxes can protrude slightly from a paragraph line box.
+- Keep these visible until a dedicated semantic geometry rule is added. Any future rule must distinguish the expected superscript ink/inline box from actual overlap, clipping, or page-boundary overflow; do not simply hide all marker containment findings.
+
+### Verified correction and CI
+- `typesetter.js` and `tools/geometry-audit-cli.js` now both exclude one-sided blocks from the local parenthesis-font counterfactual eligibility set.
+- Long-document workflow for `27e40d6713d2ee9702349f4bfad2fb3cb30c30c0`: SUCCESS; the artifact reports 4/4 eligible/tested, 0 restore mismatches/errors, 629 pages, deterministic repeat render, and the content/footnote coverage above.
+- CLI workflow for `a8a8b280440626fe57ccc9432c39d7434edccbda`: SUCCESS.
+- Workflow references:
+  - Long audit: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40217995520
+  - CLI gate: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40218014271
+- Branch separation remains unchanged: all work is on `V23`; no merge into `V21`.
+
+---
+
 
 ---
 
@@ -2445,6 +2520,726 @@ Stage Summary:
 - **שורש הבעיה**: `currentH1Title` לא התעדכן במקרה הרגיל (לא sub_shaar), ובמקרה sub_shaar הוא נחתך לפי מקף.
 - **פתרון**: עדכון `currentH1Title` בשני המקרים עם הטקסט המלא של כותרת level 1.
 - **קבצים שהשתנו**: typesetter.js בלבד.
+---
+
+## Task ID: v23-long-audit-diagnostics-2026-10-22
+**Agent:** ChatGPT
+**Date:** 2026-10-22
+**Task:** לחשוף את סוגי החריגות החמורות בדוח העימוד בתוך יומני CI, כדי לאפשר תיקון שורש הבעיה ולא להסתפק במספר כולל.
+
+### ממצאים מאומתים לפני שינוי כלי האבחון
+- ריצת Geometry audit CLI על commit c82f60555e4433d65190f2d27c84d7a885ee50b1 הסתיימה בהצלחה.
+- ריצת Geometry audit long document על אותו commit נכשלה בגלל חריגות ברמה גבוהה.
+- הדוח שהועלה כ-artifact: 601 עמודים, 216 חריגות: 15 high, 56 medium, 145 low.
+- בדיקת החזרה --repeat-check עברה: שתי הרצות יצרו 601 עמודים וחתימת פריסה זהה.
+- פילוח לפי סוג: 166 containment, 16 side-note-overflow, 12 imbalance, 12 containment-rounding, 6 sparse-line, 4 orphan.
+- בין 15 החריגות החמורות: 13 containment של block-2col החורג מ-body-flow, ו-2 חריגות side-note-overflow.
+- נמצאו מקרים שבהם גובה body-flow בפועל קטן מ-915px (למשל 779px או 606px), בעוד data-layout-fill-flow-height נשאר 915px. זו ראיה לפער בין גובה הזרימה בזמן חישוב הבלוק לבין הגובה לאחר סידור סופי של העמוד; עדיין נדרש לאמת את שרשרת הסיבה בקוד לפני שינוי אלגוריתמי.
+
+### שינוי שבוצע
+- ב-tools/geometry-audit-cli.js נוספו ליומן הריצה:
+  - ספירת חריגות לפי סוג;
+  - עד 20 דוגמאות של חריגות high עם מספר עמוד, סוג, מיקום והודעה;
+  - תוצאת בדיקת הדטרמיניזם והעמוד הראשון השונה.
+- השינוי בוצע ב-V23 בלבד. לא שונה V21 ולא בוצע מיזוג.
+
+### אימות
+- ריצת ה-smoke/CLI על commit 16ae8f362a7503cc4f79101ceb3f7c94a41b6618 הסתיימה בהצלחה.
+- לאחר מכן תוקן escaping של newline/CR במחרוזות האבחון ב-commit 626d7f62f1d3d8d1a1d1ffcd9b3698dc76e0002c.
+- בדיקת המסמך הארוך עבור commit התיקון האחרון נפתחה מחדש; יש לבדוק את תוצאתה ואת דוגמאות ה-high ביומן לפני שינוי מנגנון הפריסה.
+- לא נטען שהבעיה הגיאומטרית נפתרה. זהו שלב שיפור observability ואימות, והשלב הבא הוא לתקן את מקור החריגה ולדרוש אפס חריגות high במסמך הארוך.
+---
+
+## Task ID: v23-stretch-outer-box-guard-2026-10-22
+**Agent:** ChatGPT
+**Date:** 2026-10-22
+**Task:** למנוע ממתיחה אנכית של הבלוק האחרון לגרום לחריגה של התיבה החיצונית מגבולות גוף העמוד.
+
+### ממצא
+- בדוח הארוך על commit 626d7f62f1d3d8d1a1d1ffcd9b3698dc76e0002c, חלק מחריגות ה-containment היו בעמודים שבהם הבלוק מתחיל בגובה הגוף ומסתיים 20–43px מתחתיו. `stretchLastBlockToBottom` קבע יעד לפי `scrollHeight` של הטורים, אך המדד הקובע לגבולות העמוד הוא גובה תיבת ה-grid החיצונית בפועל.
+- מקרים אחרים חרגו ביותר מ-80px, ובחלקם גוף העמוד עצמו היה קצר יותר עקב כותרות/פריסה. אין לייחס את כל החריגות למתיחה; נדרש טיפול נפרד במצב שבו `balanceColumns` אינו מוצא מועמד שנכנס בגובה הזמין.
+
+### שינוי
+- ב-`typesetter.js` נוספה בדיקת postcondition ל-`stretchLastBlockToBottom`: לאחר המתיחה נמדד גובה התיבה החיצונית בפועל. אם הגידול חורג מהשטח הפנוי שנמדד, מוחזרים מאפייני הצאצאים למצבם הקודם, הערות הצד ממוקמות מחדש והמתיחה נדחית.
+- השחזור כולל את כל מאפייני ה-DOM של הצאצאים, ולא רק `style`, כדי להסיר גם מטא-נתונים זמניים כגון `data-base-lh` שנוצרים במהלך המתיחה.
+- השינוי בוצע ב-`V23` בלבד. `V21` נשאר בענף וב-commit המקוריים; לא בוצע מיזוג.
+
+### אימות וסטטוס
+- ריצת Geometry audit CLI על commit 074926fbe4770084e76b272ced6c4cd67467f6d2 הסתיימה בהצלחה.
+- בדיקת המסמך הארוך על commit זה עדיין הייתה בתהליך בבדיקה האחרונה; אין עדיין הוכחה שהחריגות החמורות נעלמו.
+- commit 77e9ceead3b846c39b0443ca6ce843a0f481149d כולל את שחזור כל מאפייני ה-DOM. ריצות CLI והמסמך הארוך נפתחו עבורו; יש לבדוק את התוצאות לפני קביעה שהשינוי תקין.
+- **היעד לא הושג עדיין:** אפס חריגות high במסמך הארוך. השלב הבא הוא לבחון את `data-layout-balance-fits` ואת היכולת להחזיר תוכן לעמוד הבא כאשר אין מועמד חוקי שנכנס בגובה הזמין, וכן לטפל בנפרד בחריגות הערות הצד.
+
+---
+
+## Task ID: v23-overflow-diagnostic-causality-2026-10-22
+**Agent:** ChatGPT
+**Date:** 2026-10-22
+**Task:** Remove unsupported causal attribution in geometry audit output.
+
+- The audit previously labeled every `block-2col` overflow above 20px as caused by `stretchPageToBottom`, although the audit only measured containment and did not establish causality.
+- Updated `geometry-audit.js` messages to describe the measured overflow neutrally and request source investigation instead of asserting a cause.
+- Change is on `V23` only. Long-document audit for `09d6088` was still running when checked; no claim of zero high-severity issues is made.
+
+---
+
+## Task ID: v23-outer-block-height-hard-fit-2026-10-22
+**Agent:** ChatGPT
+**Date:** 2026-10-22
+**Task:** Make column balancing account for the rendered outer block box, not only column `scrollHeight`.
+
+### Evidence
+- The 601-page audit on `09d60881cbc56cd2753a7da83b8ad52ee187585c` still reported 7 high-severity issues. The layout diagnostics show, for example, page 84: `body-flow` height 915.14px versus `block-2col` height 945.08px; page 445: 915.13px versus 944.47px.
+- Those blocks had all `data-layout-balance-*` attributes null, indicating that the balancing routine had not run for these blocks. The ordinary trigger used column `scrollHeight` and column difference, but not the rendered outer block height.
+
+### Change
+- Commit `a61dc4f1cedd2fd1e014b040158ec8e2ffcfcbca` on `V23` adds outer block height to the balance trigger and the chapter-end `keepChapterEndUnbalanced` condition.
+- When the rendered outer block exceeds the available height, the balancing call receives an available height reduced by the measured outer-box overhead (`outer block height - max(column scrollHeight)`), so the selected inner column content leaves room for the observed box overhead.
+- `V21` remains unchanged. Long-document validation for this commit is pending; no claim is made yet that all high-severity issues are resolved.
+
+---
+
+## Task ID: v23-audit-d405-no-regression-and-live-height-mismatch-2026-10-22
+**Agent:** ChatGPT
+**Date:** 2026-10-22
+**Task:** Record the full 601-page audit after the outer-box fit changes and isolate the remaining high-severity geometry pattern.
+
+### Verified audit result
+- Audit commit: `d4057671427c51b5606e1738574f66d1413d8887`.
+- Rendered 601 pages; repeated render was deterministic (identical layout hash).
+- Audit result: 100 issues — 7 high, 33 medium, 60 low. The long-document workflow failed because the audit is configured to fail on high-severity issues; the CLI workflow succeeded.
+- The seven high issues are six block/body-flow containment overflows and one side-note overflow. The largest block overflows are on pages 197 (~106.1px), 219 (~127.8px), and 581 (~79.8px).
+- Crucially, all seven high block issues still have null `data-layout-balance-*` metrics. The outer-box trigger/available-height change did not remove these cases; do not claim the high-severity problem is fixed.
+
+### Further evidence
+- On page 197, the measured body-flow height is ~778.6px and the block starts ~258px from its top, leaving ~520.9px of actual body-flow extent, while `data-layout-fill-remaining` is ~627.5px and the block height is ~627.1px. The stored fit-height and final geometry therefore disagree by about 106px.
+- CSS defines `.page-body-flow` as a flex column with `flex-grow: 1` and default flex-shrink behavior. This is a plausible interaction to investigate, but not yet proven to be the sole cause.
+- Next implementation step must trace when `remPageHeight`, `reservedNow()`, and the final `.page-body-flow` rectangle are measured relative to footnote insertion and flex layout. Do not add another heuristic balance patch until the stale/live height discrepancy is understood. A true overflow beyond the final available height requires deterministic carryover/reflow to the next page, not merely choosing the least-overflowing column split.
+
+### Branch safety
+- All changes remain on `V23`.
+- `V21` was not modified by this work. Its observed head at the latest check is `f4863540203ceb29d42d710bf8780b545a2b87a4` (a separate worklog-only commit; no merge occurred).
+
+
+## Task ID: v23-footnote-reflow-metrics-synthetic-page-fix-2026-10-23
+**Agent:** ChatGPT
+**Date:** 2026-10-23
+**Task:** Correct the audit instrumentation so live footnote-reflow metrics are actually serialized in the page tree.
+
+### Findings
+- The long audit at `bff75ef813ae20c953eb43e69475a43b90af7b84` still rendered 601 pages deterministically and reported 100 issues (7 high, 33 medium, 60 low); the workflow failed at the configured high-severity threshold.
+- The first instrumentation attempt wrote the footnote metrics to the real `.a4-page` DOM element, but the audit builds a synthetic `type: 'page'` node and begins recursive DOM extraction at `.page-content-wrapper`. Therefore the metrics were not present in the JSON report (`pages with metrics: 0`). This was a defect in the diagnostic path, not evidence about the suspected layout cause.
+- Fixed `geometry-audit.js` to read `data-fn-reflow-*` attributes directly from `pgEl` while constructing the synthetic page node. The next long-document report must be checked to confirm these fields are populated before interpreting any measurements.
+- CLI syntax/smoke had passed on the prior instrumentation commit; validation for the synthetic-page fix is pending.
+
+### Branch safety
+- All changes remain on `V23`; no merge was performed.
+- `V21` was not modified by this task; latest observed head `f4863540203ceb29d42d710bf8780b545a2b87a4`.
+
+
+## Task ID: v23-cli-geometry-tree-metrics-route-fix-2026-10-23
+**Agent:** ChatGPT
+**Date:** 2026-10-23
+**Task:** Ensure footnote reflow metrics reach the JSON report used by the CLI audit.
+
+### Finding and correction
+- A second call-path inspection found that the long-document CLI uses `extractGeometry()`, whose synthetic page node is separate from the node created by `extractGeometryWithDomRefs()` (used for interactive DOM-backed inspection). The previous synthetic-node fix only covered the latter path, so it was insufficient for the report generator.
+- Added the same page-level `data-fn-reflow-*` collection to the synthetic page object in `extractGeometry()`. This is the relevant serialization path for the long-document JSON report.
+- The CLI audit passed on the prior code commit, but that does not validate the new metrics path. A fresh long-document run must confirm non-null metrics on pages where `flushFootnotesInto()` actually inserts notes.
+
+### Branch safety
+- Changes are confined to `V23`; `V21` is not modified and no merge is performed.
+
+
+## Task ID: v23-redo-check-and-balance-skip-diagnostics-2026-10-23
+**Agent:** ChatGPT
+**Date:** 2026-10-23
+**Task:** Instrument the existing page retry and column-balancing decisions after confirming that footnote insertion shrinks body-flow while leaving the block unchanged.
+
+### Change
+- `typesetter.js`: `redoCheck()` now records the actual reserve, pre-reserve remaining height, free height after reserve, body-flow height, last-child overflow, retry count, and the exact decision reason on the page. This does not alter the retry decision.
+- `typesetter.js`: `balanceColumns()` now records whether it was called, its input height and available height, and a skip reason when it exits before evaluating candidates (missing column, empty block, or no legal candidates). The candidate-selection policy is unchanged.
+- `tools/geometry-audit-cli.js`: serializes the retry diagnostics for all pages and includes the balance-call/status/skip attributes in detailed overflow diagnostics.
+- `geometry-audit.js`: exposes the new balance diagnostics in both geometry tree paths.
+
+### Why
+The latest 601-page deterministic audit (commit `48bddf07784866bc85d5a65b520f0dcf04a0b76d`) measured four footnote-related overflows where insertion reduced body-flow by 54.5–308.9px but did not reduce the last block's height. The next audit must identify whether the retry sees no reserve, considers the reserve satisfied, reaches its retry limit, or fails to evaluate legal balance candidates. No balancing or pagination behavior is changed by this diagnostic commit.
+
+### Branch safety
+- All changes remain on `V23`; no merge into `V21`.
+
+
+## Task ID: v23-post-layout-outer-fit-guard-2026-10-23
+**Agent:** ChatGPT
+**Date:** 2026-10-23
+**Task:** Use the completed retry/balance diagnostics to reduce remaining severe block overflow and make the final layout decision observable.
+
+### Evidence from the long-document audit at `6d0df62750edba5b480f22ec67af37583729e537`
+- Determinism passed: 601 pages in both renders, identical hash `399af509b25010324c4d4379f20eac774f395c0addb2fde6e539f8bfbdc783dd`.
+- The report contained 93 issues (2 high, 34 medium, 57 low), down from 100 issues (7 high, 33 medium, 60 low) in the preceding audited commit. The long-document workflow still failed because `failOn: high` is configured.
+- Two remaining high-severity overflows are on page indices 83 and 444 (printed labels in the DOM are פד and תמה): outer block overflow is approximately 29.94px and 29.34px.
+- Both detailed diagnostics had no `data-layout-balance-called` attribute, and their rendered columns reached about 945px against a body-flow height of about 915px. This indicates the overflow was not corrected by the existing balance call path; it does not by itself prove the exact mutation that first caused it.
+- Footnote area measurement was consistent in the report: 59/59 exact queue matches, no matched sample differed from the measured height by more than 5px. This does not eliminate late-state or retry-control-flow problems, but it means the broad measurement discrepancy from an earlier run was not reproduced in this report.
+
+### Changes
+- `typesetter.js`: added a hard postcondition after the normal fill/light-justification branch. It checks both the rendered outer block height and the maximum inner column scroll height against the actual available height. If either exceeds the limit, it records the measured overflow and reruns deterministic `balanceColumns()` with available height reduced by the measured outer-box overhead.
+- `tools/geometry-audit-cli.js`: added serialization of `data-layout-postfit-triggered`, `data-layout-postfit-outer-overflow`, and `data-layout-postfit-inner-overflow` to the detailed overflow report, so the next audit can show whether the new guard triggered on the remaining severe pages.
+- New commit with the guard: `831cbc051056cfd197d46b9b95b529c978167644`.
+- New commit with report serialization: `c86ed12f7adf80279c7dc94797d53f8ef204cdec`.
+
+### Validation status
+- Geometry audit CLI workflow passed on commit `6d0df62750edba5b480f22ec67af37583729e537`.
+- For commits `831cbc051056cfd197d46b9b95b529c978167644` and `c86ed12f7adf80279c7dc94797d53f8ef204cdec`, new CLI and long-document workflows were queued/running at the time of this entry. No claim is made that the new guard has fixed the severe overflows until the corresponding long-document report is inspected.
+
+### Branch safety
+- All changes remain on `V23`; no merge into `V21`.
+- `V21` remains untouched; last observed head is `f4863540203ceb29d42d710bf8780b545a2b87a4`.
+
+
+## Task ID: v23-balance-final-justify-hard-fit-rollback-2026-10-23
+**Agent:** ChatGPT
+**Date:** 2026-10-23
+**Task:** Prevent the final vertical-justification pass inside `balanceColumns()` from undoing a fitting split.
+
+### Code finding
+- Inspection of `balanceColumns()` showed that after selecting a candidate, it always applies a final `justifyColumnVertically()` to the shorter column. The candidate's `fits` value is computed before this final adjustment. Therefore a candidate that fits can be made too tall after selection; the function's returned `fits` value is computed after the adjustment, but the chosen split is not searched again.
+- This is a plausible direct route by which a fit candidate can become an overflow after the selection stage. It is not claimed to be the sole cause of the two prior severe pages, where the audit had not recorded a balance call; the new post-layout guard is intended to force those blocks through the split search if their final rendered geometry exceeds the available height.
+
+### Change
+- `typesetter.js`: snapshot all descendant attributes before the final column justification. If the selected candidate had fit but the final justification pushes either the maximum column scroll height or the rendered outer block beyond `availableHeight + 0.5px`, restore the attributes and re-position side notes. The equalization adjustment is treated as subordinate to the hard page-fit constraint.
+- `tools/geometry-audit-cli.js`: expose `data-layout-balance-final-justify-rolled-back` in detailed overflow diagnostics.
+- Commit adding the rollback: `2d8a936f85978e8385dd1dc21f065583475b2db2`.
+- Commit exposing the metric: `258542a84879309c1c496bb482d3230aeea14eea`.
+
+### Validation status
+- This change is not validated by the previous report at `6d0df62750edba5b480f22ec67af37583729e537`; that report predates the hard-fit guard and final-justify rollback.
+- The latest CLI and long-document workflows must complete before claiming success. If the candidate itself does not fit, rollback of the final justification cannot solve that case; the audit must show whether the post-layout guard and deterministic split search can find a fitting candidate or whether carryover is required.
+
+### Branch safety
+- Changes remain on `V23`. No merge into `V21`.
+
+
+## V23 — prevent the post-page global equalization pass from recreating overflow
+**Date:** 2026-10-23
+
+### Evidence
+- Long-document audit at commit `258542a84879309c1c496bb482d3230aeea14eea` completed with 601 pages, 93 issues (2 high, 34 medium, 57 low), and deterministic repeat-check PASS.
+- The two high-severity containment failures remained on printed pages 84 and 445 (about 29.94px and 29.34px overflow). The workflow failed specifically because `--fail-on high` detected these geometry issues, not because Chromium, dependencies, input validation, or artifact upload failed.
+- Code inspection found a second vertical-justification pass after `applyCrossParagraphParens(container)`, at the end of the full document layout. This pass runs after the per-block post-fit guard and can expand a block after that guard has already run. This is a concrete path capable of reintroducing overflow late in the pipeline.
+
+### Change
+- `typesetter.js`: snapshot descendant attributes and original outer/inner heights before the final global column equalization. If the pass increases the block's outer height or maximum column height by more than 0.5px, restore the pre-pass attributes. Record `data-layout-global-justify-rolled-back` and reposition side notes after either outcome.
+- `tools/geometry-audit-cli.js`: include the new rollback attribute in detailed block diagnostics.
+- Code commit: `463769a6c8c13d4f998289fdea7adae98534145c`.
+- Diagnostic commit: `9671d6005137a1768bcf25c30df52bd305841a86`.
+
+### Validation required
+- A new long-document run on the updated V23 head is required. Success criterion: zero high-severity containment issues and repeat-check determinism PASS. Do not infer success from CLI syntax checks alone.
+- If the two known pages still overflow, inspect their final diagnostics and pursue the next cause; do not relax `--fail-on high`.
+
+### Branch safety
+- Changes remain on `V23`; `V21` remains an independent parallel branch and must not be merged.
+
+
+## V23 — guard page-final column equalization against vertical overflow
+**Date:** 2026-10-23
+
+### New audit evidence at `463769a6c8c13d4f998289fdea7adae98534145c`
+- Repeat-render determinism passed: both renders produced 601 pages with identical hash `14c758305995026a17d6a76a1c42427f49b9dd17481a61a84b52b249f6d5f051`.
+- The audit still failed `--fail-on high`: 98 issues (4 high, 35 medium, 59 low), compared with 93 issues (2 high, 34 medium, 57 low) before this change.
+- Printed page פ״ד still had a 29.94px block overflow. Its block reported `data-layout-postfit-triggered=false`, then ended at 945.08px against a 915px body-flow. Its columns were both 945px tall and the right column's paragraphs had 9px bottom padding. This shows the per-block fit check had passed before a later page-level adjustment; the final per-page equalization block had no hard postcondition.
+- Printed page תמה had 27.94px overflow. Its post-fit guard had triggered and `balanceColumns` had run, but the final rendered block still exceeded the body-flow. The earlier global rollback alone was therefore insufficient; the next audit must determine whether the page-final guard removes this path and what remains afterward.
+- Footnote measurements remained internally consistent: 59/59 queue matches, maximum measured/actual difference 0px.
+
+### Change
+- `typesetter.js`: added a hard postcondition to the page-final equalization pass that runs after `stretchPageToBottom()`. It snapshots the block root and descendants, and rolls back the adjustment if either the rendered outer height or tallest column grows by more than 0.5px. Side notes are repositioned after the accepted adjustment or rollback.
+- `tools/geometry-audit-cli.js`: expose `data-layout-page-final-justify-rolled-back` in the detailed overflow diagnostics.
+- Code commit: `c00be35e00b42fc44b190f3c785e364222ce51a5`.
+- Diagnostic commit: `ff1e4c0eb2cda055d6ac75d7b4a11b76d0133d26`.
+
+### Validation required
+- The long-document geometry audit on the new V23 head must complete. Required checks: zero high-severity containment issues, no regressions in imbalance/widow/sparse-line metrics, 601 pages (unless a justified pagination change is demonstrated), and repeat-render determinism PASS.
+- The new rollback metric must be inspected on printed pages פ״ד and תמה. If either remains high-severity, use its post-patch geometry diagnostics to locate the remaining mutation; do not weaken `--fail-on high`.
+
+### Branch safety
+- Changes remain on `V23`; no merge into `V21`.
+
+
+## V23 — follow-up audit: severe overflow reduced; capture the remaining high imbalance
+**Date:** 2026-10-23
+
+### Results at `c00be35e00b42fc44b190f3c785e364222ce51a5`
+- The long-document audit completed with 601 pages and repeat-render determinism PASS (identical hash across both renders).
+- Issue counts changed from 98 (4 high, 35 medium, 59 low) at `9671d600` to 93 (1 high, 43 medium, 49 low). The former high-severity containment failures on printed pages פ״ד and תמ״ה are no longer high: page פ״ד now has only a 9.94px low-severity overflow; page תמ״ה no longer has a containment issue, though its columns still differ by 14px.
+- Footnote measurement remains exact for all 59/59 queue matches, maximum difference 0px.
+- The remaining high-severity issue is column imbalance on printed page 94: right=464px, left=421px, reported gap=42px. The report did not include the block's layout attributes because diagnostics were emitted only for body-flow overflow greater than 15px. Therefore the exact reason the late equalization pass failed to close this gap was not yet observable.
+
+### Change
+- `tools/geometry-audit-cli.js`: emit detailed layout diagnostics when either body-flow overflow exceeds 15px **or** absolute column-height difference exceeds 30px. Include explicit `columnBalance` measurements, so a severe imbalance can be investigated even when the block fits inside body-flow.
+- Diagnostic commit: `5a509b2472537a8f9e64148f88d12f68a566c165`.
+
+### Next validation
+- Inspect the new page-94 diagnostics, especially `data-layout-global-justify-rolled-back`, `data-layout-page-final-justify-rolled-back`, per-column paragraph line heights/padding, and whether the final difference persists after the cross-paragraph-parentheses pass.
+- Do not lower the high-severity threshold. Keep the remaining imbalance as a real failure until the layout cause is fixed and the long-document audit passes.
+- Keep all work on `V23`; do not merge with `V21`.
+
+
+## V23 — instrument the global-justify rollback on the remaining high-imbalance page
+**Date:** 2026-10-23
+
+### Evidence from long-document audit at `5a509b2472537a8f9e64148f88d12f68a566c165`
+- The report confirms the only high-severity issue is an imbalance on printed page צ״ה (pageIdx 94): right column 463.75px, left column 421.31px, absolute difference 42.44px.
+- The block starts at the top of body-flow and ends at 463.75px; body-flow is 915.14px tall, so the block itself is not close to the bottom boundary (about 451.39px remain below it).
+- `data-layout-global-justify-rolled-back=true`; the per-block balancing pass ran and considered its split valid. The global post-pass attempted to close the gap, but its hard postcondition restored the prior styles.
+- Determinism passed across 601 pages with identical hash `a037bf56fa197b372d3a2888d41c28a1b007985e8a85ee5685b63019a9a5f845`. Footnote measurements matched exactly for 59/59 pages. Audit remains 93 issues (1 high, 43 medium, 49 low).
+
+### Change
+- `typesetter.js`: record the before/after right and left column heights, outer/inner block heights, and explicit rollback reason for the late global equalization pass. This is diagnostic instrumentation only; it does not change the balancing decision or relax any fit guard.
+- `tools/geometry-audit-cli.js`: export those new attributes in `layoutDiagnostics` for the page with severe imbalance.
+- Commits: `2c3c34876354c30c1218bea7553dc11b3c3c24cd` (typesetter instrumentation), `1aa83c415067bbf9dbcedfcf30521161e9cf2284` (audit export).
+
+### Next step
+- Run the long-document audit on the current V23 head and inspect the recorded before/after values to identify whether the rollback is caused by outer-box growth, tallest-column growth, or both. Then make a narrowly scoped algorithmic fix based on the measured result. Do not weaken the hard-fit condition or lower the audit threshold.
+
+### Branch safety
+- All changes remain on `V23`; `V21` is an independent parallel branch and must not be merged.
+
+
+## V23 — align global-justify overshoot correction with hard rollback tolerance
+**Date:** 2026-10-23
+
+### Code-level finding
+- In the final global balancing pass, the postcondition rolls back if the tallest column grows by more than 0.5px. However, the pre-rollback correction called `shrinkColumnVertically` only when overshoot exceeded 1.5px. That left an inconsistent 0.5–1.5px interval: a small overshoot was not corrected, but still triggered rollback, potentially discarding a near-complete equalization and restoring a much larger gap.
+- The long-document report at `5a509b2472537a8f9e64148f88d12f68a566c165` establishes the remaining high imbalance (42.44px) and confirms the global pass was rolled back. The dedicated before/after diagnostic run is still needed to establish the exact overshoot size; this patch addresses the tolerance mismatch without weakening the hard-fit postcondition.
+
+### Change
+- `typesetter.js`: lower the two final global-pass overshoot-correction thresholds from 1.5px to 0.5px, matching the hard rollback tolerance. The same hard postcondition remains active; this change does not permit an over-tall block to survive.
+- Code commit: `78919c08ecafe66bbd2a77744dbb57203b1e4e62`.
+
+### Validation required
+- The new long-document run must verify whether page צ״ה now balances and whether any rollback still occurs. Confirm 601-page repeat-render determinism, no new high-severity issues, and no regression in containment/widow/sparse-line/side-note metrics. If the high imbalance remains, use the recorded attempted heights and rollback reason rather than weakening the hard-fit guard.
+
+### Branch safety
+- All changes remain on `V23`; do not merge with `V21`.
+
+
+## V23 — preserve safe subpixel equalization without permitting page overflow
+**Date:** 2026-10-23
+
+### Evidence
+- Long-document audit at `78919c08ecafe66bbd2a77744dbb57203b1e4e62` still had one HIGH issue: printed page צ״ה (pageIdx 94), right column 463.75px versus left 421.31px (42.44px gap).
+- Instrumentation proved the global pass successfully reached 464px in both columns, but rollback was triggered solely because the outer grid box grew from 463.75px to 464.36px (0.61px). The tallest column's `scrollHeight` remained 464px; the block ended about 451px above the body-flow bottom.
+- This is a subpixel box/scrollHeight rounding discrepancy, not a growth of the tallest content column. The previous unconditional 0.5px outer-box rollback discarded the whole 42px balancing improvement.
+
+### Change
+- `typesetter.js`: allow outer-box growth up to 1px only when the tallest content height does not grow and the mutation does not introduce overflow past the enclosing `.body-flow` boundary. The check compares the maximum bottom edge of the flow's direct children before and after the mutation, so it also catches a later sibling being pushed beyond the page boundary.
+- Keep rollback for tallest-column growth above 0.5px, outer-box growth above 1px, or newly introduced body-flow overflow. No audit severity threshold was weakened.
+- Code commit: `be41c316c274bd776437f0ceade5a64020f33f18`.
+
+### Validation required
+- Run the Geometry audit CLI and the full 601-page long-document audit on this commit.
+- Verify page צ״ה is balanced, determinism remains PASS, footnote queue/measurement remains exact, and no high-severity issue is introduced. Compare total issue counts and containment/imbalance/side-note/orphan/sparse-line counts against the previous audit (92 total; 1 high, 42 medium, 49 low).
+- If the high issue persists, inspect the new rollback reason and actual flow-boundary measurements; do not weaken hard-fit checks or lower the audit threshold.
+
+### Branch safety
+- All changes remain on `V23`; `V21` is an independent parallel branch and must not be merged.
+
+
+## V23 — fix global-justify overflow guard selector
+**Date:** 2026-10-23
+
+### Static code finding
+- The final global equalization pass used `blk.closest('.body-flow')` to find the containing body-flow region.
+- The actual page DOM created by `createPageLayout()` uses `.page-body-flow`; a repository-wide scan of `typesetter.js` found only this one `.body-flow` selector and eight uses/references of `.page-body-flow`.
+- Therefore `flowForGlobalJustify` was always null for normal rendered blocks, disabling the intended enclosing-flow boundary check. This is a concrete instrumentation/guard bug, independent of whether it caused the previously observed page-95 imbalance.
+
+### Change
+- Replaced `blk.closest('.body-flow')` with `blk.closest('.page-body-flow')` in `typesetter.js`.
+- Code commit: `f743f3c6a22deb36207168dfa5f9ef8cabed080f`.
+
+### Validation results
+- The full long-document workflow completed successfully on code commit `f743f3c6a22deb36207168dfa5f9ef8cabed080f`: 601 pages, repeat-render determinism PASS (identical SHA-256 page-layout signatures), 0 HIGH / 37 MEDIUM / 48 LOW issues.
+- Footnote measurement audit: 59 pages with footnote areas; exact queue matches 59/59; maximum absolute measured-vs-actual difference 0px.
+- Printed page צ״ה (pageIdx 94) has no imbalance issue in this report. Important attribution: the preceding `be41c316` report already had no issue at pageIdx 94, so the disappearance of the old 42.44px HIGH imbalance is attributable to the earlier safe subpixel-equalization change, not to this selector correction.
+- Compared with the immediately preceding `be41c316` report (84 issues; 0 HIGH / 37 MEDIUM / 47 LOW), this run has one additional LOW imbalance at pageIdx 237 (right 621px, left 630px, rounded gap 8px). Containment issue count remains 38; some measured small bottom overflows changed by subpixel amounts. This is not a high-severity regression, but its cause should be inspected rather than ignored.
+- A follow-up diagnostic-only CLI change at `dc0ccb9652936bf068fd0ca286e8b4fe0da5e0b0` now exports layout diagnostics for residual column gaps above 5px (instead of only gaps above 30px). Both the smoke workflow and the long-document workflow passed; the long report contains 25 block-level diagnostics and preserves the same 601-page deterministic signature and issue counts.
+- The new diagnostics explain the extra low imbalance at `pageIdx=237` (printed header label רלח): before the global pass, right=621px and left=630px; the attempt reached 630px/630px but grew the outer block from 629.5px to 630.25px. The block already overflowed `.page-body-flow` by 2.0px; the attempt would increase that to 2.75px, so the corrected guard rolled it back with reason `flow-overflow`. This is the expected hard-fit tradeoff, not a reason to weaken the guard. The next possible improvement would need to reclaim at least 0.75px of upstream slack or otherwise fit within the existing outer height; do not force the taller block to remain.
+
+### Branch safety
+- Change is confined to `V23`. No merge into `V21`; `V21` remains a separate parallel development branch.
+
+
+
+## V23 — instrument split decisions for residual one-line paragraph fragments
+**Date:** 2026-10-23
+
+### Evidence
+- The current full audit reports four one-line `p-cut` fragments at pageIdx 24, 162, 198, and 350 even though `resolveParagraphSplit()` is intended to enforce a minimum of two lines in each split fragment.
+- The final DOM audit alone cannot distinguish whether the split routine placed one line or whether a chunk that passed the split rule later collapsed to one rendered line. Do not change widow/orphan rules until that distinction is measured.
+
+### Diagnostic-only change
+- `typesetter.js`: record the split-time input line count, measured fit count, placed count, min-first/min-last rules, and inside-parenthesis state on each paragraph fragment.
+- `geometry-audit.js`: include those split-time fields, continuation status, final rendered line count/widths, and computed font metrics in each orphan issue.
+- These are data attributes and audit fields only; they must not alter CSS or the layout decision.
+
+### Initial diagnostic result — audit settings mismatch
+- The full run on `55aac38e568a85a7a7eb0bcd95d33cc7ca1bbcfb` completed: 601 pages, determinism PASS, 0 HIGH / 37 MEDIUM / 48 LOW issues, and exact footnote matches 59/59. However, this run is not yet a valid production-default audit for widow/orphan behavior.
+- All four reported orphan fragments had `minFirst=1` and `minLast=1`, despite the production defaults in `index.html` and `default_settings.json` setting both `avoid-widows` and `avoid-orphans` to true.
+- Root cause: `renderer-bridge.js` creates hidden inputs for settings; when the CLI sends `settings={}`, those inputs remain type=hidden and their `.checked` property is false. `getSplitRules()` reads `.checked`, so the headless audit silently disabled both hard split rules. The one-line fragments therefore cannot be treated as production-default failures from this run.
+- Fix the audit harness first: when `--settings` is omitted, load `default_settings.json` automatically and record the settings source in both JSON and Markdown reports. Then rerun the full document and reassess all geometry metrics; do not compare the resulting page count/issues to the empty-settings run as if they used identical settings.
+
+### Branch safety
+- Changes remain on `V23` only. Do not merge with `V21`.
+
+
+
+## V23 — diagnose the production-default side-note overflow
+**Date:** 2026-10-23
+
+### Evidence
+- The first full audit using the actual `default_settings.json` completed with 627 pages, repeat-render determinism PASS, exact footnote measurements 60/60, and 68 issues (1 HIGH / 26 MEDIUM / 41 LOW).
+- The sole HIGH issue is a side note at pageIdx 497 (printed page label רלח), overflowing the body-flow/margin boundary by 24.6px. Its rendered height is 76px while its containing margin column is only 50px tall.
+- The issue is a real production-default finding; unlike the four orphan records from the earlier empty-settings audit, it persists under the actual defaults. Do not lower the >20px HIGH threshold.
+
+### Diagnostic-only change
+- `geometry-audit.js`: enrich side-note overflow findings with the associated token ID/text, anchor paragraph and block rectangles, computed note metrics, and nearby same-side notes. This is intended to establish whether the note can be repositioned upward without colliding with another note or violating the page-flow boundary.
+
+### Validation required
+- Run the full audit again under automatic `default_settings.json` settings. Inspect the note's anchor, containing block, nearby notes, and exact position constraints before changing `finalizeNotePositions()` or the page-level margin-note layout. Keep the audit threshold unchanged and preserve deterministic output.
+
+### Branch safety
+- Changes remain on `V23` only. Do not merge with `V21`.
+
+## V23 — preserve side-note fit correction evidence in the CLI report
+**Date:** 2026-10-23
+
+### Finding
+- The full production-default run at `29fe8a7f30b814e6bea25266f8c6c1e8658be8cb` completed deterministically on 627 pages with 0 HIGH, 26 MEDIUM, and 41 LOW issues; footnote measurement matched exactly on 60/60 pages.
+- The report's Markdown said “No side-note fit adjustments were needed,” but code inspection found the CLI did not copy `model.sideNoteFitCorrections` from `window.__geomAudit.extract()` into its serialized report object. Therefore that sentence was not supported by the data and must not be treated as proof that no correction was applied or blocked.
+
+### Fix
+- `tools/geometry-audit-cli.js`: include `sideNoteFitCorrections: model.sideNoteFitCorrections || []` in the browser-evaluation result. The report will now show each recorded shift or blocked correction instead of silently defaulting to an empty list.
+- This is a diagnostics/report-integrity fix only. It does not change typesetting, note positions, severity thresholds, or issue classification.
+
+### Validation required
+- Run the CLI smoke test and the full 627-page production-default audit. Verify repeat-render determinism and inspect the serialized correction list and Markdown section.
+- Do not claim the side-note fit adjustment evidence is complete until the new report has been inspected.
+
+### Branch safety
+- Changes remain on `V23` only. Do not merge with `V21`.
+
+
+
+## V23 — capture transient paragraph geometry when final justification is rolled back
+**Date:** 2026-10-23
+
+### Evidence motivating the instrumentation
+- The production-default 627-page audit recorded a late-justification attempt on printed page תקלא: the right column grew from 486px to 561px while the target was 499px, then the guard rolled it back. The left column stayed at 499px.
+- Existing diagnostics recorded column totals but not paragraph-level geometry during the temporary state. They could not distinguish a line-count/reflow change from a padding, line-height, or first-word-window effect.
+
+### Change
+- `typesetter.js`: when the late page-final justification increases the outer block or tallest column by more than 0.5px, capture the target side/height and each paragraph's before/after box dimensions, computed line-height, margins, padding, base line-height, and first-word-window dimensions.
+- The existing rollback remains unchanged: temporary styles are restored, then transient diagnostic JSON is attached to the block. No thresholds, layout decisions, or audit severities are changed.
+- `geometry-audit.js`: expose the diagnostic string in `layoutMetrics.pageFinalJustifyDiagnostic` so the report preserves the evidence.
+
+### Validation status
+- Instrumentation change only; not yet validated by smoke test or the full 627-page audit. Inspect the new diagnostic on page תקלא and other rollback pages before changing justification behavior.
+
+### Branch safety
+- Changes remain on `V23` only. Do not merge with `V21`.
+
+## V23 — canonical final geometry snapshot after all layout passes
+**Date:** 2026-10-24
+
+### Problem
+- The `data-layout-final-*` metrics were written inside `balanceColumns()`, before later global justification and cross-paragraph parenthesis styling could finish changing the geometry. A field named “final” could therefore describe an intermediate state.
+- Candidate-selection metrics and actual final geometry answer different questions and must remain separate.
+
+### Change
+- `typesetter.js`: at the end of `typesetDocumentCore()`, after late balancing and side-note boundary correction, overwrite the `data-layout-final-*` fields from the surviving DOM geometry.
+- Add `data-layout-final-phase="post-global-justify"` so consumers can identify the measurement phase.
+- Final fit now checks both the tallest inner column and the outer block against the available height. If the available-height value was not recorded, the result is `unknown`, not a guessed boolean.
+- Rollback reason records the observed global, page-final, or local-final rollback reason without replacing candidate-selection metrics.
+- `tools/geometry-audit-cli.js`: export the final phase marker alongside the existing final geometry attributes.
+
+### Validation status
+- Geometry Audit CLI smoke passed on commit `3d4d641e497d348f56303fd20d249303972f01e9`.
+- The full long-document audit on commit `a53526970d0f83f94bd295b139112e1fdd1b5b41` passed: 627 pages, repeat-render determinism PASS with the same hash as the prior baseline, 55 issues (0 high / 20 medium / 35 low), and exact footnote measurement on 60/60 pages (maximum difference 0px). This validates the canonical post-layout snapshot implementation itself.
+- Full long-document audits for the subsequent commits `02900c0b3b6e651da75b65ca4bbc44ffcd67e889` (CLI exports `data-layout-final-phase`) and `3d4d641e497d348f56303fd20d249303972f01e9` (final fit also checks outer block height) are still running. Inspect their artifacts before claiming those exact revisions fully validated.
+
+### Next step
+- Inspect the latest full audit artifact and confirm the final-phase fields are emitted on blocks with audit findings.
+- Then add a structured per-block decision record joining selected split, selection constraints, later mutations, rollback reason, and final geometry. Keep candidate-selection evidence immutable.
+- All changes remain on `V23`; do not merge with `V21`.
+
+## V23 — structured per-block layout decision ledger
+**Date:** 2026-10-24
+
+### Change
+- `typesetter.js`: record the selected candidate index, split item/line, candidate count, and a deterministic lexicographic score that mirrors the `better()` comparator. Preserve these as candidate-selection evidence.
+- At the canonical final snapshot, write `data-layout-decision-record` as schema-versioned JSON joining selection metrics, final geometry, fit status, and local/global/page rollback information.
+- `tools/geometry-audit-cli.js`: export `layoutDecisionRecords` for every two-column block, not only blocks that exceed an audit threshold. Existing issue-focused `layoutDiagnostics` remains filtered to relevant overflow/imbalance cases, while the ledger is the full inventory.
+
+### Validation status
+- Geometry Audit CLI smoke passed on commit `5b7331ec089b922b98f3249d1b61992a14979d84`.
+- The full long-document run for that commit is still in progress. Before treating the ledger as validated, inspect the artifact and verify that records are present for all two-column blocks, selected-candidate fields are populated when balancing ran, skipped blocks have explicit status/reason, and repeat-render output remains deterministic.
+- The earlier full run at `3d4d641e497d348f56303fd20d249303972f01e9` passed with 627 pages, 55 issues (0 high / 20 medium / 35 low), and exact footnote measurement on 60/60 pages. That result validates the canonical final snapshot but not this newer decision-ledger addition.
+
+### Next step
+- Inspect the latest ledger report; compare candidate-estimated geometry against final geometry for cases with large differences (e.g. the selected candidate predicted right=293px / left=307px, while final right=314px / left=307px). Treat such deltas as a measurement-parity question, not as a cosmetic imbalance to conceal.
+- Only after the evidence is available, trace the measurement/render parity across `renderSingleItemFast`, `appendItemFinal`, `applyDelimiterStyles`, and `createDropWord`. Do not change candidate ranking or safety constraints before the discrepancy is explained.
+- All changes remain on `V23`; do not merge with `V21`.
+
+
+## V23 — run local parenthesis-font counterfactual after final geometry (2026-10-25)
+
+### Verified defect
+- In current `typesetter.js`, `captureParenFontCounterfactualDiagnostics(container)` was called before `applyCrossParagraphParens(container)` and before `captureParenthesisScopeDiagnostics(container)`.
+- The counterfactual function requires both existing `.paren-text` spans and the per-block scope diagnostic to identify local parentheses and exclude cross-column/page scopes. At its call site, the scope attribute had not yet been created, so `localParenChars` was false and the local-font experiment could not become eligible. In addition, it ran before the later cross-paragraph styling and global balancing passes, not against canonical final geometry.
+- The previous long-run artifact (commit `3e2566a`) contains no `parenFontCounterfactual` ledger fields. Its parenthesis-scope conclusions remain valid for cross-boundary pairing, but it does not answer whether local parenthesis font metrics affect the residual imbalances.
+
+### Change planned/applied
+- Move the counterfactual invocation to after cross-paragraph parenthesis styling, scope mapping, all later balancing, canonical final geometry capture, and decision-ledger creation.
+- Preserve the diagnostic-only contract: each span's original inline style must be restored exactly; restored geometry must match baseline within 0.5px; no pagination or layout policy changes are intended.
+- The report must expose eligible/tested counts, each imbalance block's counterfactual height delta, and zero restoration mismatches/errors.
+
+### Validation gate
+- Run smoke and the full long-document audit on the source commit containing this fix.
+- Confirm all 854 blocks have a version-1 counterfactual record, the document-level summary exists, and the local-parenthesis imbalance cases are actually tested (not merely marked ineligible due to missing scope data).
+- Confirm deterministic repeat render, 629-page baseline unless a proven deterministic reason explains a change, 854/854 ledger-to-DOM parity, source/content conservation, footnote measurements 60/60 exact, zero runtime errors, and no containment regressions.
+- Do not change balance/stretch caps based on the counterfactual until its measured effect is inspected. `V23` remains separate from `V21`; no merge.
+
+
+### Interim validation (2026-10-25)
+- CLI smoke workflow `40199965372` passed on source commit `4bbc7b3631b116e469655a829342b092d2703dff`: 6 pages, repeat-render determinism PASS, 2/2 decision records, and no audit/runtime issues. The smoke fixture has no parenthesis pairs, so its expected counterfactual eligible/tested counts are 0/0; it does not validate the local-parenthesis experiment.
+- Full long-document workflow `40199965410` was triggered on the same source commit and was still reported as `in_progress` at the time of this note. No long-run result is claimed yet.
+
+
+### Additional integrity-gate defect found during review (2026-10-25)
+- The previous `instrumentationIntegrityFailures()` required a document-level counterfactual summary and zero errors/restoration mismatches, but did not require the number of tested cases to equal the expected eligible cases.
+- The pre-fix long artifact on commit `8ef8bd2` reported `eligibleCount=0` and `testedCount=0`, while the imbalance inventory plus scope/span records imply four eligible local-parenthesis cases. The run nevertheless reported instrumentation integrity PASS. This is a second, independent transparency defect: the test was not only ordered too early; the gate also failed to detect that it had tested nothing.
+- Strengthen the CLI integrity gate to independently derive the expected eligible count from each record's final residual, local parenthesis counts, span count, and cross-boundary exclusion. Require the summary's eligible/tested counts to match this derived count. Smoke fixtures with no eligible cases must still pass with 0/0.
+
+## 2026-10-25 — V23 audit-summary counterfactual table verified
+
+- Commit under verification: `bf4a3df1b7e341f9e97d513e8eca570b659831ca` (`V23: show parenthesis counterfactual results in audit summary`).
+- Both CI workflows succeeded:
+  - Long-document geometry audit: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40218782134
+  - Geometry audit CLI: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40218782115
+- Downloaded and inspected the produced long-audit artifact, rather than relying only on the workflow status.
+- Verified that the Markdown report includes the four measured counterfactual rows (pages `רלא`, `תקלד`, `תקלה`, `תקצ`) with baseline heights, same-font heights, residual before/after, and exact-restoration status.
+- The artifact confirms: 629 pages; 854 two-column blocks and valid decision records; deterministic repeat render; counterfactuals 4/4 tested, 0 restoration mismatches, 0 errors; 14 low findings (10 imbalance, 4 containment-rounding), with no high/medium findings.
+- The counterfactual table is diagnostic only. It does not change production typography or waive any remaining imbalance.
+- Branch discipline unchanged: this commit and work remain on `V23`; no merge into `V21`.
+
+## 2026-10-25 — V23 audit report now declares unexercised ornament coverage
+
+- Commit: `e00de6f6bb4929302aafb66f6f57bed0bee81906` (`V23: report unexercised ornament geometry coverage`).
+- The audit Markdown now inspects ornament-related settings in the run metadata and explicitly reports whether any are active.
+- If all ornament settings are disabled/none, the report says `NOT EXERCISED` and explicitly avoids implying that ornament containment, clipping, or collision behavior was validated.
+- If ornament settings are active, the report lists the exact active keys/values; if no relevant settings exist in metadata, it reports coverage as unknown.
+- Local validation: full CLI source syntax check PASS; synthetic report test PASS for both disabled-settings and active-setting cases.
+- Geometry audit CLI workflow: SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40219154319
+- Full long-document audit for this commit is still running at the time of this entry; its result must be checked before claiming full-document validation.
+- Motivation from the previous full audit: the actual run used `default_settings.json` with ornament-specific settings set to `none`. Therefore, that run cannot establish correct geometry for enabled ornaments even though its other audit checks passed.
+- Branch separation unchanged: work remains on `V23`; no merge into `V21`.
+
+
+## 2026-10-25 — Active ornament smoke test and long-document regression verified
+
+- Branch: `V23` only. No merge or cherry-pick into `V21`.
+- Active-ornament smoke workflow: SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40220014293
+- Long-document workflow on commit `aec2c6d08937d071d759d253213a0488211c52e3`: SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40220014389. The artifact was downloaded and inspected, not inferred from status alone.
+- Long-document baseline remains stable: 629 pages; 854 two-column blocks and decision records; 3,081/3,081 source paragraphs conserved; 524/524 headings conserved; 2,043/2,043 side notes conserved; 60/60 footnote-area queue measurements exact (maximum difference 0px); deterministic repeat-render and audit-instrumentation integrity PASS; 0 runtime/console errors.
+- Long-document baseline still reports 14 low findings: 10 column-balance residuals and 4 note-marker `containment-rounding` findings; no high/medium findings. Ornament DOM coverage is zero in that run because all ornament-related settings are disabled in `default_settings.json`; the report explicitly marks that geometry as `NOT EXERCISED`. This is not a regression in the smoke fixture and is not evidence about active ornaments.
+- The separate active-ornament fixture enables H2 top/bottom, H3 right/left, and note-header right/left ornaments. All six selector categories were present with nonzero rendered geometry (1 each). Content conservation passed for 4 paragraphs, 3 headings, 1 side note, and 1 end note; the footnote queue matched exactly (1/1, 0px difference). It reported 2 low column-imbalance findings and no `containment`, `containment-rounding`, or `overlap` findings.
+- Strengthened `--require-ornaments`: it now fails not only when any required ornament category is absent/zero-sized, but also when the focused active-ornament fixture reports a containment, containment-rounding, or overlap issue. Balance findings remain separate from ornament-geometry gating.
+- Scope boundary: a positive DOM rectangle proves that an ornament rendered, not that all possible clipping, paint overflow, text collision, or separator interactions are correct. Dedicated coverage is still needed for top headers, section/note separator rules, additional ornament families, and edge/collision cases.
+- Follow-up CI for the strengthened gate must be checked after this commit; do not claim the new gate itself is validated until that workflow passes.
+
+
+## 2026-10-25 — Ten-category geometry coverage and strict smoke gate
+
+- Branch: `V23` only; `V21` remains separate.
+- CLI smoke workflow on commit `38794095c587b18fdef0068b5be140cd383fdb3e`: SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40234579506. Downloaded and inspected artifact `12614502125`.
+- Active-geometry fixture measured all ten categories with nonzero geometry: H2 top/bottom, H3 right/left, note-header ornaments right/left, section divider, footnote rule, top header, and visible top-header divider. Counts were 1 each in the active fixture. The ordinary smoke fixture showed two section dividers and two top headers/dividers; its note-rule count was zero because it did not render a footnote area.
+- Active fixture: content/audit integrity PASS; 2 low balance findings; no `containment`, `containment-rounding`, or `overlap` findings. The smoke command now uses `--require-geometry-features`, which requires all ten categories and rejects those geometry issue kinds.
+- Added separate `decorativeGeometryDomCoverage` report data for `.sec-divider-wrap`, footnote note-rule, `.top-header-grid`, and the visible computed bottom border. The header-divider measurement explicitly treats fully transparent RGBA as not visible; the report notes that zero DOM evidence can mean the input did not exercise the component, not necessarily that the setting is disabled.
+- Updated `LAYOUT_DEPENDENCY_MAP.md` to record tested coverage and remaining limits. Nonzero rectangles do not prove complete paint/clipping/text-collision correctness; further fixtures are still needed for disabled modes, varied running-header content, edge cases, and additional ornament families.
+- Full-document audit on the input revision at commit `c893cec6e919a86fde5d9941cc6247c030c64a98` succeeded: 643 pages; 859 two-column decision records; 3,105 source paragraphs conserved; deterministic repeat render and instrumentation integrity PASS; 14 low findings (10 imbalance, 4 containment-rounding), no high/medium findings and no runtime/console errors. The test inputs had changed from the earlier baseline, so these counts are not directly comparable to the prior 629-page run without an input-level diff.
+- A new full-document audit for the expanded coverage code must be checked separately before claiming that exact latest commit passed the long regression.
+
+
+## 2026-10-25 — Long-document validation for expanded geometry instrumentation
+
+- Long-document workflow: SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40234824260. Downloaded and inspected artifact `12614497946` from code commit `71728984354dd6358a923642f564525c32cd1965`; later commits on `V23` changed only the dependency map/worklog, not the tested code.
+- Repeat-render determinism PASS; audit instrumentation integrity PASS; no runtime or console errors.
+- Long input result: 643 pages; 859 two-column decision records; 3,105 source paragraphs conserved with zero missing, mismatched, or extra rendered IDs; 14 low findings (10 imbalance and 4 `containment-rounding`), zero high/medium findings.
+- The expanded geometry coverage correctly observed 82 section-divider elements, 76 note-rule elements, 624 top-header grids and 624 visible top-header dividers. H2/H3/note-header ornament coverage remains zero because those ornament settings are disabled in the long-run settings; the report says `NOT EXERCISED` for that ornament subset. This is expected and distinct from the active fixture's ten-category coverage.
+- The active smoke workflow at current branch commit `eb5cff50caf79c428bd69938c6c9ef1d14cd46aa` passed: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40234885057. Its downloaded report confirms six ornament categories plus section divider, note rule, top header and visible header divider are each present with nonzero geometry; no containment/rounding/overlap findings; two low balance findings remain.
+- The active geometry smoke and the long-document audit cover different settings/content conditions; do not merge their coverage claims into a single assertion that all ornament families have been validated.
+
+
+## 2026-10-25 — Independent H2 title ornaments implemented and smoke-tested
+
+- Code commit: `81de5ea5aa4e8773b2484d7282806dc11913eb3f` (`V23` only).
+- The H2 title ornament UI had controls for `none`, `top_bottom`, and `side`, plus existing CSS/post-fit hooks, but the typesetter had no renderer path for these independent title ornaments. Implemented the missing rendering path for both modes; the left side ornament mirrors the right when left is `none`, matching the existing UI label.
+- Added distinct CSS wrappers and geometry-audit element types for the independent H2 title ornaments. The CLI now measures `h2TitleTop`, `h2TitleBottom`, `h2TitleSideRight`, and `h2TitleSideLeft`, and the strict smoke gate requires the two categories for the active mode.
+- Smoke workflow SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40235447401. Artifact `12615020877` was downloaded and inspected.
+- Side-mode fixture: right/left title ornaments each measured 1; top/bottom mode fixture: top/bottom title ornaments each measured 1. Both fixtures also retained the ten previously required geometry categories; audit instrumentation integrity PASS, no runtime/console errors, and no containment/containment-rounding/overlap findings. Each reports 2 low `capacity-limited-residual` balance findings.
+- The long-document audit for the same code commit is running separately; its artifact must be checked before declaring long-document regression PASS for this commit.
+
+
+## 2026-10-25 — Active column-gutter divider geometry
+
+- Code commit: `ef5b03384c66be2c374a3ad2eb5cd47caf8070a0`.
+- Set `col-divider-style=plain` in both active title-ornament fixtures and added `colGutterDivider` to observed DOM coverage and the strict `--require-geometry-features` gate.
+- Geometry audit CLI workflow: SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40235771112. Downloaded artifact `12615140838` and inspected both reports.
+- Each active fixture rendered 2 nonzero column-gutter dividers. The side-title fixture measured right/left H2 title ornaments (1 each); the top/bottom fixture measured its upper/lower ornaments (1 each). Both retained the other required geometry categories and had no containment/rounding/overlap findings; 2 low balance findings remain in each.
+- The long-document audit for this code commit is still running and must be inspected before marking the long regression complete.
+
+
+## 2026-10-25 — Column-gutter divider coverage and long regression
+
+- Code commit: `ef5b03384c66be2c374a3ad2eb5cd47caf8070a0`; active fixtures set `col-divider-style=plain` and the strict gate requires `colGutterDivider`.
+- CLI workflow SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40235771112. Artifact `12615140838` was inspected; both active fixtures measured 2 column-gutter dividers with nonzero geometry, while the generic fixture correctly measured zero because its column divider is disabled.
+- Long-document workflow SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40235771044. Artifact `12615211183` was downloaded and inspected.
+- Long-document regression remains stable at 643 pages and 859 two-column decision records; 3,105 source paragraphs conserved, repeat-render determinism and instrumentation integrity PASS, zero runtime/console errors, 14 low findings (10 imbalance, 4 containment-rounding), no high/medium findings.
+- Long-run coverage observed 82 section dividers, 76 note rules, 624 top-header grids and 624 visible top-header dividers. The column-gutter divider count is zero because `default_settings.json` disables that feature; the active fixtures exercise it separately.
+- Next geometry coverage target: an actual SVG ornament rendered inside a running-header column. The current fixture now sets `hdr-c-type=ext________2_svg` and adds a required `headerOrnament` DOM assertion; CI must pass before it is considered validated.
+
+
+## 2026-10-25 — External running-header SVG: real asset loading and direct graphic measurement
+
+- CLI asset-loading fix commit: `f2db7b273a286b81b149341793a176d776cb0b90`. The root cause was test harness initialization: `renderer.html` intentionally bypasses the interactive folder-loading UI, so `ext_*` settings could refer to an ornament that was not registered in the headless page. The CLI now loads only the selected IDs from `header_ornaments.json`, registers them with `registerExternalHeader`, and records `run.externalHeaderAssetsLoaded`; missing assets fail loudly rather than silently rendering blank content.
+- Strict direct-graphic audit commit: `ac46a70c1a42d3026c567cd760eafd0dcdcbd173`. Added `headerOrnamentGraphic` measured from descendant SVG/IMG elements with nonzero width and height. For any selected external header ornament, the strict gate requires the requested type to match the rendered header selection and both wrapper and graphic to have nonzero geometry.
+- CLI workflow SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40237097840. Artifact `12615167224` inspected. Active side-title fixture measured `headerOrnament=1`, `headerOrnamentGraphic=1`, `h2TitleSideRight=1`, `h2TitleSideLeft=1`, plus 1 section divider, 1 note rule, 1 header grid, 1 header divider, and 2 column-gutter dividers. Active top/bottom fixture measured `headerOrnament=1`, `headerOrnamentGraphic=1`, `h2TitleTop=1`, `h2TitleBottom=1), and 2 column-gutter dividers. Audit integrity PASS; paragraph/heading/side-note/end-note conservation PASS; no containment, containment-rounding, or overlap findings in either fixture (2 low balance findings per active fixture).
+- Long-document workflow SUCCESS on the strict-audit commit: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40237097786. Artifact `12615038191` inspected. The run remains deterministic at 643 pages; 3,105/3,105 source paragraphs, 529/529 headings, and 2,042/2,042 side notes conserved; 859/859 decision records valid with DOM parity; zero page/runtime or console errors; audit instrumentation integrity PASS. Findings remain 14 LOW (10 imbalance, 4 note-marker containment-rounding), 0 medium/high. Active default-setting coverage: 82 section dividers, 76 note rules, 624 top-header grids and 624 top-header dividers; independent ornament settings remain disabled in the long fixture and are exercised in the dedicated active fixtures.
+- Remaining boundary: the active smoke proves the selected external SVG element itself is present and measurable, not that every SVG asset, clipping mode, page edge, text collision, or divider variant is visually perfect. The next balance investigation should preserve the 8 capacity-limited residuals and 2 policy-accepted light-justify residuals as visible findings until the candidate/capacity policy is improved and revalidated.
+
+## 2026-10-25 — Per-page balance capacity diagnostics
+
+- CLI commit: `3708bb8673a0d2d8868c4b3b494d2f3b45775d38`.
+- Added a Markdown table for every imbalance showing final residual, classification, decision route, target side/height, and right/left stretch capacity before/after final justification. Light-justify residuals include the before→after column heights and explicitly show that final-justify capacity is not applicable for that route.
+- CLI workflow SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40237638833. Artifact `12615398180` inspected; the active ornament fixtures render the table correctly, and the geometry/content gates still pass.
+- Long-document workflow SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40237638748. Artifact `12615877188` inspected at commit `3708bb8673a0d2d8868c4b3b494d2f3b45775d38`: 643 pages; deterministic repeat render; 3,105/3,105 source paragraphs conserved; 859/859 valid decision records with DOM parity; zero page/console errors; audit integrity PASS. Findings remain 14 LOW (10 imbalance, 4 note-marker containment-rounding), 0 medium/high.
+- Capacity evidence: eight `capacity-limited-residual` rows show the target side's stretch capacity exhausted after final justification (e.g. left capacity 15.01px → 0px, while right retains 22.51px), leaving a 5–6px gap. Two other rows are 5px `policy-accepted-light-justify-residual` under the explicit 8px policy. This is evidence of the current capacity/policy limits, not proof that the typography is ideal; no tolerance was raised and no findings were suppressed.
+
+
+## 2026-10-26 — Three-column running-header ornaments verified
+
+- Commit under test: `c7336846e0219fd1960b6ff509af3e66153c45ee`.
+- CLI workflow SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40238938604. Downloaded and inspected artifact `12615769263`. Both active ornament fixtures measured 3 header ornament wrappers and 3 actual SVG/image graphics; right/center/left wrapper and graphic counts were exactly 1 each. The strict gate passed. Each fixture had zero containment, containment-rounding, or overlap findings; 2 LOW balance findings remained per fixture.
+- Long-document workflow SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40238938601. Downloaded and inspected artifact `12615179711`. Regression: 643 pages; deterministic repeat render; 3,105/3,105 paragraphs, 529/529 headings, 2,042/2,042 side notes conserved; 859/859 decision records valid with DOM parity; zero page/runtime or console errors; 14 LOW findings (10 imbalance, 4 note-marker containment-rounding), zero medium/high.
+- The long fixture correctly reports running-header ornaments NOT EXERCISED because default settings disable them. Active ornament evidence comes from the dedicated fixtures.
+- Historical follow-up (resolved by the 2026-10-26 note-marker diagnostics commit below): the serialized issue record previously lacked reliable computed-style/nearest-line evidence. The four findings remain visible pending interpretation of the new measurements.
+
+
+## 2026-10-26 — Candidate-table analysis of the 10 residual column imbalances
+
+- Inspected the downloaded 643-page report for all 10 imbalance findings, not only the summary.
+- All 8 `capacity-limited-residual` cases have the same three legal candidates: (R/L) 50/71px, 71/50px, and 114/0px. The first two tie at 21px before final justification; the deterministic tie-break selects the candidate with the right column taller.
+- For the selected 71/50px candidate, the 2-line short column has a remaining stretch capacity of 15.008px (2 × 7.504px under the 35%-of-base-line-height cap). The raw 21px gap therefore cannot be eliminated under the current typography cap; after stretch the residual is 5–6px. The mirrored candidate would leave the same residual on the opposite side. This confirms that changing only the tie-break or choosing the other currently enumerated candidate does not improve these eight cases.
+- The two other findings remain distinct 5px `policy-accepted-light-justify-residual` cases. Page 233's late justify attempt grew the taller content by 6px and was rolled back by the `tallestGrowth` postcondition; page 592's light-justify route reduced a 43px pre-adjustment gap to 5px and skipped the balance search under the explicit 8px policy.
+- Decision: preserve all 10 findings. Do not raise the stretch cap or change legal split policy without a controlled typography experiment. The current evidence supports capacity/policy limits, not an incorrect candidate ordering.
+
+
+## 2026-10-26 — Strengthen active decorative geometry gate
+
+- Expanded the focused active-geometry gate from containment/rounding/overlap only to include the audit's explicit overflow classes: `side-note-overflow`, `fn-overflow`, `pn-overflow`, `fn-page-overflow`, `fn-pn-overflow`, `fn-containment`, `fn-line-overflow`, and `page-overflow`.
+- Rationale: positive DOM rectangles only prove rendering; a separator, ornament, header graphic, note region, or page number can still render while crossing its allowed boundary. The active fixture now fails on the audit's recognized overflow classes too, while keeping column imbalance, widow/orphan, and sparse-line policy findings separate.
+- Local static validation: `node --check tools/geometry-audit-cli.js` equivalent syntax parse passed in the editing runtime. Awaiting CI smoke and long-document regression on this commit; no pass claim until both are observed.
+
+
+## 2026-10-26 — Running-header SVG geometry and clipping audit
+
+- Code commit: `40555e5fbdc47afe443960e04655dbd2c4b3acd2` (`V23: fix SVG viewBox token parsing in geometry audit`). It includes the preceding SVG clipping/viewBox audit implementation; an earlier intermediate commit failed the active smoke because the whitespace tokenization regex parsed `viewBox` incorrectly. That failure was preserved as evidence and corrected rather than weakening the gate.
+- CLI workflow SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40242572980. The artifact `12617960481` was downloaded and inspected.
+- Both active-decoration fixtures measured 3 external-header SVGs (right/center/left), all with positive wrapper and graphic rectangles; each had a valid `viewBox=[0,0,914,391]`, zero missing graphics, zero invalid viewBoxes, and zero ancestor CSS-clipping findings.
+- The smoke fixture preserved all 4/4 source paragraphs, all 3/3 headings, one side note, and one end note; runtime/console errors were zero. The two remaining findings are LOW capacity-limited column-balance residuals, separate from the decoration geometry gate.
+- The audit now records each header graphic's side, wrapper and graphic rectangles, SVG viewBox status, SVG overflow style, and any ancestor whose `overflow-x/y` clips the graphic. The active-feature gate fails for missing graphics, invalid explicit viewBoxes, or detected ancestor clipping.
+- Scope limitation: this checks the SVG viewport and CSS ancestor rectangles, not the painted bounds of paths inside the SVG, transparent internal padding, SVG masks/clip-path, or every ornament family. Those remain explicit follow-up targets.
+- Long-document workflow SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40242572939. Artifact `12617640970` was downloaded and inspected. The run remained stable at 643 pages; repeat-render determinism PASS (same 643-page count and identical hash `c5509142…9fcb`), all 3,105/3,105 source paragraphs conserved, zero runtime/console errors, and 14 LOW findings (10 imbalance, 4 note-marker containment-rounding). All four note-marker findings had a matched live DOM rectangle and a measured nearest text line. The long-run settings disable ornaments, so header ornament coverage is explicitly zero/NOT EXERCISED there; active ornament geometry is validated by the separate CLI fixture.
+
+
+## 2026-10-26 — Distinct even/odd running-header rendering
+
+- Code commit: `9ec548a035ebb54aeff2c35aeb809c868f00471e` (`V23: implement and audit distinct even/odd headers`). Inspection found that the UI and settings stored `hdr-verso-*` values, but `buildHeaderGridHTML` did not read them; even pages therefore could not honor their dedicated header configuration.
+- The renderer now resolves the even-page (verso) type, alignment, font, size and custom text when `hdr-distinct-even-odd` is enabled. `same_as_odd` resolves to the recto type. The selected per-page types and ornament IDs are recorded as DOM data attributes and returned in the audit report.
+- CLI workflow SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40243878874. Artifact `12617633323` was downloaded and inspected. The dedicated parity fixture rendered 13 pages and 9 running-header grids (5 even, 4 odd); all 82 source paragraphs were conserved, with zero high/medium/low findings and zero browser/console errors.
+- The fixture uses different external SVG IDs for recto and verso: recto right/center/left = `ext_187_b_svg`, `ext_196_b_svg`, `ext________2_svg`; verso right/center/left = `ext_______2_svg`, `ext________svg`, `ext_187_b_svg`. All 27 rendered graphics had positive geometry, valid viewBoxes, zero missing graphics and zero detected ancestor clipping. The per-page audit matched each side's selected type to its actual ornament ID.
+- The H2 top/bottom ornament fixture remains a separate test and has `hdr-distinct-even-odd=false`; it passed in the same CLI run.
+- Long-document workflow SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40243494729. Artifact `12617663558` was downloaded and inspected. The 643-page document remained at 643 pages, repeat-render determinism PASS with identical hash `698b7839…d030f0`, all 3,105/3,105 source paragraphs conserved, zero runtime/console errors, and the same 14 LOW findings (10 imbalance, 4 note-marker containment-rounding). The report recorded 624 running-header grids: 313 even/verso and 311 odd/recto, proving both paths are exercised on the long document. No header ornament was active in the long-run settings; external SVG geometry remains covered by the active fixture.
+
+
+## 2026-10-26 — Sparse-page and square-bracket scope diagnostics
+
+- Code commit introducing the diagnostics: `c1412ca7cc5df211884f71c4b61d4d0d8c8077f4` (`V23: audit sparse pages and cross-boundary square brackets`). Follow-up diagnostic detail commit: `de3b8e06cd6681c59788c0a578bb3ed02bdd64ba`. Sparse-page capacity correction: `d0807f69275d2daaa22f0dd2090628dfa540133a`.
+- `geometry-audit.js` now emits `sparse-page` findings based on measured paragraph/heading heights relative to the available body-flow area. The denominator is the available page text area (one or two columns depending on the page structure), not the rendered block height; the first targeted fixture exposed that the initial block-height denominator could normalize a short block as if it filled the page, and that calculation was corrected.
+- Sparse-page policy currently uses a conservative 24% threshold, with findings below 12% marked medium and other sparse findings marked low. A page is exempt when the next page starts with a Heading 2 (chapter-end exemption). On a chapter-start page, the blank area above the Heading 2 is excluded from the text-occupancy calculation. This is diagnostic-only and does not change layout.
+- The geometry audit now scans paragraph `data-raw-text` in document order for square-bracket `[]` scopes (the source syntax used for footnotes). It reports cross-paragraph, cross-column and cross-page scopes as `square-bracket-scope`, with source offsets, token IDs, start/end previews, page/column boundaries and an estimated raw-span length. Unmatched opening/closing brackets are reported as high-severity `square-bracket-unmatched` findings. Ordinary matched pairs contained in one paragraph and one column are not reported.
+- A dedicated fixture `tests/fixtures/geometry-audit-diagnostics-smoke.txt` and a CI assertion were added. The test requires exactly one sparse-page finding: the final short chapter page must be reported, while the short page preceding a new Heading 2 must be exempt. It also requires a cross-paragraph square-bracket finding. Latest CLI workflow SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40246300879. The fixture report confirmed one sparse page (3% estimated occupancy) and one cross-paragraph/cross-column bracket scope; the preceding chapter-end page was not reported.
+- Long-document workflow SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40245958009. Artifact `12618942088` was downloaded and inspected. The 643-page document remained deterministic (repeat-render PASS), all 3,105 source paragraphs were conserved, and runtime/console errors were zero. The audit recorded 20 findings: 10 imbalance, 3 sparse-page, 4 note-marker containment-rounding, and 3 square-bracket-scope; zero high-severity findings. The sparse-page candidates were page labels `שמג` (12.4%), `תקד` (6.7%), and `תרכח` (15.5%). Cross-boundary bracket scopes were found on `תקח` (right→left column), `תקיז` (right→left column), and across `תרלא`→`תרלב` (page boundary).
+- Interpretation / remaining review: the findings are diagnostics, not automatic corrections. The three sparse-page candidates and three cross-boundary square-bracket scopes should be reviewed as content/layout cases before deciding whether any policy or parser behavior needs changing. No thresholds were tuned based on these results. All changes remain on `V23`; no merge to `V21` was performed.
+
+
+## 2026-10-26 — Diagnostic precision pass: logical paragraphs and sparse-page geometry
+
+- Square-bracket audit refinement commit: `34095c2ead581baad31220eaf63c84700f90e5a2` (`V23: distinguish source paragraphs from layout fragments`). The audit now uses `data-token-id` as the logical source-paragraph identity; it no longer treats distinct DOM fragments of the same source paragraph as separate paragraphs merely because the renderer split them at a column/page boundary. Reports preserve both logical paragraph ordinals and DOM fragment indexes, plus continuation flags and token IDs. Estimated span length counts a separator only when the source token changes.
+- CI regression guard commit: `d5329cbf45944aedc7855429e8b8937d2e763d4b`. The diagnostic fixture asserts that `crossedParagraph` agrees with differing source token IDs and that fragment indexes are present. Workflow SUCCESS at https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40246655136. Its artifact was inspected: one sparse-page finding, one cross-paragraph/cross-column scope, correct distinct token IDs, and the chapter-start metrics from the pre-weighting implementation.
+- Sparse-page geometry refinement commits: `59d0ffae65c57abbceca76ff2174ea3fe3f893bc`, `b2979fc7ba0af40dab9d63ad6efad02c6cdc42fc`, `093cb0d90c8b75bc08389f362571c7908044c1b3`, and `81a450986097edbb5f70d7e060a0f91f6e9ee15b`. Occupancy is now measured as column-equivalent height: visible paragraph/heading height is weighted by element width relative to a real main-column width, so full-width headings are not undercounted on two-column pages. Heading-only pages are eligible for the check. Reports expose the occupancy method, available body height, excluded chapter-start area, column-capacity multiplier, and reference-column width; the old `occupiedTextHeightPx` label was replaced by the more accurate `occupiedColumnEquivalentPx`.
+- Final CLI workflow SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40247359358 (workflow revision `bd63524209ef021ba0f9600fce05ba58a66edf41`). Artifact `12618669930` was downloaded and inspected. The diagnostics fixture rendered 5 pages, preserved all source text/headings, and had zero browser/console errors. It reported exactly one sparse page (3.3% column-equivalent occupancy), with 264.98px of chapter-start area explicitly excluded and 650.16px of available body height; the preceding chapter-end page remained exempt. It also reported the intended cross-paragraph/cross-column square-bracket scope, with distinct source token IDs and the correct `crossedParagraph=true`.
+- Final long-document workflow SUCCESS: https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40246995038 (code revision `81a450986097edbb5f70d7e060a0f91f6e9ee15b`). Artifact `12618889480` was downloaded and inspected. It remained at 643 pages, deterministic repeat-render PASS with identical SHA-256 `698b7839…d030f0`, all 3,105/3,105 source paragraphs and 529/529 headings conserved, all 2,042/2,042 side notes conserved, all 859/859 layout-decision records valid and matched to DOM blocks, and zero browser/console errors. The audit still records 20 findings: 10 imbalance, 3 sparse-page, 4 note-marker containment-rounding, and 3 square-bracket-scope; zero high-severity findings. The three sparse-page findings remained on `שמג` (12.4%), `תקד` (6.7%), and `תרכח` (15.5%). The three bracket scopes remain on `תקח` (right→left), `תקיז` (right→left), and `תרלא`→`תרלב` (page boundary). The updated metric did not change these candidates; it clarified the units and now explicitly accounts for full-width text elements.
+- All changes remain on `V23`; `V21` is untouched.
+
+
+## 2026-10-26 — Diagnosed the six zero-height-column cases; no speculative pagination change
+
+- Inspected the full long-document artifact from workflow run [40280846344](https://github.com/SUGINACH/IMUD_TORANI/actions/runs/40280846344), code revision `42d54f5f1ebac08d77e289ce12bdb6a334383920`. The audit completed at 643 pages and the repeat-render hashes were identical (`698b7839…d030f0`), but the quality gate correctly failed: 26 findings, including six HIGH empty-column imbalances. All 859/859 layout decision records were valid and matched DOM blocks; 3,105/3,105 paragraphs and 529/529 headings were conserved; there were zero browser/console errors.
+- Inspected the six individual issue records and their candidate ledgers. Each is a real `.block-2col` with both column elements present, left height 0, and one short right-side paragraph fragment of 2–3 lines. Each selected candidate is the sole candidate (`splitItemIndex=1`, `splitLineCount=0`, `fits=true`, `valid=true`). Neighbor context shows some are followed by `.sec-divider-wrap` and some by `.block-h3-span`; one is preceded by H3 and is at a segment end. This confirms the defect is not missing DOM or a geometry-reader omission: the balancing candidate contract permits an empty side.
+- Corrected the double-escaped whitespace-normalization regex in `geometry-audit.js` on V23, commit `2368b613b144848d807a63039dbc654949eb1647`. This is diagnostic-only and does not change layout selection. Static source inspection confirms it now uses `/\\s+/g`. A CI run against this exact new commit has not yet been obtained, so do not claim post-correction CI validation.
+- Added the explicit, still-unimplemented two-column non-empty invariant and required fallback contract to `LAYOUT_DEPENDENCY_MAP.md`, commit `d252bc5fc920cad217a44e07500a3bf4f88974d4`. The next code change must not merely forbid the sole candidate and leave the block in an undefined state. It must define a deterministic structural fallback for short residuals at section boundaries, preserving text, heading/divider order, widow/orphan rules, no-stretch chapter endings, and repeat-render identity.
+- No pagination policy was changed in this pass. The six HIGH findings remain open; V21 was not modified or merged.
+
+## 2026-10-26 — explicit full-width fallback for short terminal residuals (V23)
+
+- Root cause confirmed in the long-document audit: six `block-2col` blocks had one rendered paragraph fragment of only 2–3 lines and an empty opposite column, generally at a structural boundary (section divider or H3 span). In one case, the source/raw-text metadata was 3,572 characters while the actually rendered fragment was 45 characters; diagnostics now record both lengths and the element's live geometry/computed display metrics.
+- `typesetter.js`: when no legal two-column candidate exists, the engine now applies `full-width-terminal-residual` only if the block contains exactly one paragraph item, one actual rendered paragraph in one column, the opposite column is empty, and the rendered fragment itself is short enough under the configured widow/orphan minima. The existing paragraph DOM/text is preserved; the active column spans CSS grid columns 3–6, the opposite column and gutter divider are hidden, and side-note anchors are repositioned against the resulting geometry. The decision ledger records fallback side and before/after height.
+- This is deliberately narrow. Other no-legal-split cases retain the explicit `preserve-existing-flow-no-legal-split` fallback and remain visible to the audit; the code does not invent arbitrary splits or silently waive them.
+- `geometry-audit.js`: intentional full-width residuals are reported as `structural-fallback` only after checking the declared side, active grid span, hidden opposite column, and non-empty rendered text. A malformed fallback is HIGH severity. This avoids misclassifying an explicitly single-width structural block as a failed two-column balance.
+- Added `tests/fixtures/no-legal-two-column-split.txt` and CI assertions for the explicit decision contract and the rendered structural fallback. The fixture confirms height reduction from 71px to 31px, with a valid fallback record.
+- Long-document audit on the code commit `2da2ccc0aa8dabf6915eb75914a7ce93e85f20e1`: **639 pages**, deterministic repeated render (same hash), 3,105/3,105 paragraphs conserved, 529/529 headings conserved, 2,042/2,042 side notes conserved, and 858/858 decision records valid. The quality gate passed with **0 HIGH findings**; the six former empty-column findings are now six valid LOW-severity structural-fallback records. Remaining audit findings: 5 MEDIUM (one sparse-page, one orphan, three square-bracket-scope) and 23 LOW.
+- The page count changed from 643 to 639 because the full-width residuals reflow into fewer vertical lines. This is an expected geometry change, not proof by itself of correctness; conservation and repeat-render checks also passed.
+- V21 was not modified or merged.
+
+## 2026-10-26 — terminal-residual sparse-line correction verified (V23)
+
+- Code commit: `74ab453754dd807e71f4410c1dedfd38a994b183`.
+- The prior long audit exposed a remaining typography defect inside a structurally valid fallback: the actual rendered `p-cut` ended with a 42px line after a 469px first line. Line count alone had accepted it as a valid two-line fragment.
+- `typesetter.js` now measures actual rendered inline-fragment rectangles after selecting a widow-safe residual width. If the final line is below 50% of the first line (matching the audit's sparse-line threshold, except when the last line contains parenthetical text), it deterministically searches narrower integer widths. A candidate is accepted only if it preserves the minimum rendered line count and does not increase the pre-fallback column height. If no candidate meets all constraints, the initial widow-safe width is preserved and the decision is marked `unresolved`, not silently reported as corrected.
+- The decision ledger records `fallbackSparseLine` as `corrected`, `not-needed`, or `unresolved`. `geometry-audit.js` links sparse-line findings to their enclosing `block-2col` fallback. The long-document workflow now fails if a terminal-residual fallback retains a sparse-line finding or an unresolved density decision.
+- Long audit workflow run `40288059132` passed on commit `74ab453754dd807e71f4410c1dedfd38a994b183`. Result: 639 pages; repeated render hash identical (`55ba00139b1b147a719c34e8165a340a59e925b3c21918951027c8fa4fe6ec5d`); 3,105/3,105 paragraphs, 529/529 headings, 2,042/2,042 side notes, and 858/858 valid decision records. Quality gate: 0 HIGH, 4 MEDIUM, 23 LOW. The prior `sparse-line` issue disappeared; the affected terminal residual selected width 422px and the decision ledger marked density `corrected`.
+- Remaining inventory: 9 LOW imbalance findings (7 capacity-limited residuals, 2 residuals accepted by the explicit 8px light-justify policy), 6 LOW structural-fallback findings, 6 LOW containment-rounding findings, 2 LOW sparse-page findings, 1 MEDIUM sparse-page finding, and 3 MEDIUM square-bracket scopes spanning source paragraphs/columns/pages. The 3 bracket scopes are diagnostics of actual editorial bracket spans; they require semantic review before any pagination policy is changed.
+- Parenthesis coverage: 2,493 paired scopes; 86 cross-column pairs; 47 cross-page pairs; zero unmatched opening delimiters at document end. The summary still reports 3 unmatched closing delimiters; their source locations are not yet exposed as a dedicated diagnostic and remain a follow-up task.
+- Ornament coverage is exercised by separate smoke fixtures, not the long-document default settings. The previous smoke run at commit `810e05927bb41e642d74bc02d4ae67e25b3e9f28` passed active ornament, recto/verso header, and H2 title top/bottom geometry tests with zero header-SVG clipping findings. A fresh smoke rerun for commit `74ab453754dd807e71f4410c1dedfd38a994b183` was still in progress when this entry was written; do not treat it as passed until its run concludes.
+- V21 was not modified or merged.
+
+## 2026-10-26 — verify bracket-state invariant and current long audit (V23)
+
+- Confirmed both GitHub Actions workflows for commit `3b117b0d9c867434f84c1a82c456bfc13065d87f` completed successfully: `geometry-audit-long` and `geometry-audit-smoke`.
+- Long audit: 639 pages; deterministic repeated render (identical hashes `55ba00139b1b147a719c34e8165a340a59e925b3c21918951027c8fa4fe6ec5d`); 3,105/3,105 paragraphs, 529/529 headings, 2,042/2,042 side notes, 858/858 decision records conserved/valid.
+- Quality gate: 0 HIGH findings; 4 MEDIUM and 23 LOW findings. Counts: 6 validated structural fallbacks, 9 low-severity balance findings, 3 sparse-page findings (one medium, two low), 6 containment-rounding findings, and 3 medium square-bracket-scope findings.
+- The remaining medium bracket-scope findings occur on pages 505, 514, and 629; these are cross-paragraph/cross-column or cross-page editorial spans, not automatically pagination defects. Do not change layout policy until their rendered text and source scope are reviewed.
+- The current report still has one medium sparse page (page index 501, estimated text capacity 7%). This needs context-aware inspection before choosing between a valid structural page and a layout regression.
+- V23 only. V21 remains untouched and separate.
+
+## 2026-10-26 — phased roadmap added (V23)
+
+- Added `V23/PLAN_STABILITY_COMPLETENESS_TRANSPARENCY.md` in commit `b93beba627c59956f92e97b0c6741fb6b2bb03da`.
+- The plan defines nine staged phases with explicit exit gates, current verified baseline, GitHub Actions run/artifact/log workflow, and a no-merge rule for V21.
+- Next action is Stage 0: re-confirm current V23 HEAD and both latest Smoke/long runs before trusting any prior metrics. Then Stage 1 inventories all current findings from the matching artifacts.
+- This commit adds a plan only; it does not itself change the layout algorithm or establish new test results.
+
 
 ## Task ID: v22-geometry-audit-review-and-fixes
 ### Agent: Claude (ענף V22)
@@ -2557,3 +3352,15 @@ V21 הורץ ב-Chrome headless (Linux, Chrome 153) על `mid_long_test_text.txt
 - הכלים (`layout-ab.mjs`, `layout-explain.mjs`, `geometry-audit-headless.mjs`) עובדים עם Chrome מותקן (headless רגיל) ומחזירים exit code כשל בנדטרמיניזם או כשהיומן משנה פריסה.
 
 ### אימות: שתי ריצות ירוקות ב-GitHub Actions. selftest: A1=A2=A3 (0 עמודים שונים); explain: היומן לא שינה פריסה.
+
+---
+## Task ID: v22-merge-main-v23
+### Agent: Claude (ענף V22, ריפו Tora_Book_Typesetter_Yellow)
+### Task: העברת כל מה שנדרש מ-`main` (קו V23) ל-V22
+
+### מה נעשה:
+- `main` נמחק בריפו לפני שהמיזוג שלי נדחף. ה-tip שלו (`80bb72247657ace954c6011fb3f9818a1cf094c8`) עדיין היה זמין בשרת, שוחזר דרך ענף זמני `v23-recovered-temp`, ומוזג ל-V22 (386 commits). קונפליקטים בארבעה קבצים בלבד: `typesetter.js` (נלקח של `main` וניתוב ההגדרות הורץ מחדש בסקריפט), `renderer-bridge.js` (המבנה של V22 + `preflightFonts` של `main`), `geometry-audit.js` (נלקח של `main` כמות שהוא), `worklog.md` (איחוד).
+- הכללים הנוספים שלי הועברו ל-`geometry-audit-extra.js` (תוסף שעוטף את `audit()`), עם `tests/geometry-audit-extra.test.js` מול בסיס מדומה.
+- `scripts/route-engine-reads.js` + `tests/engine-routing.test.js`; `engine-trace.js` תופס גם `repositionOverflowingSideNotes` והחלטות קיבולת; ה-workflows של `main` הופנו מ-`V23` ל-`V22`.
+- בשלב מוקדם יותר הסביבה שלי אופסה והמיזוג נעשה מחדש; את הוכחת ה-A/B (0 עמודים שונים בין המנוע של `main` למיזוג) הרצתי לפני האיפוס, ובמיזוג החוזר התוצאות של הניתוב זהות (180 הגדרות ו-11 פקדים נגזרים).
+

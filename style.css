@@ -1051,6 +1051,43 @@ body.tabs-not-ready #sidebar::before {
 
 .header-col-r, .header-col-c, .header-col-l {
     --hdr-row-h: 26px;
+    /*
+     * Keep every running-header column inside the header's 22px content box
+     * (26px row minus 3px bottom padding and 1px divider). line-height alone
+     * was insufficient: the long-document audit still found 3.6–3.7px top
+     * overflow on repeated center-column ornaments/content.
+     */
+    height: 22px;
+    min-height: 0;
+    max-height: 22px;
+    box-sizing: border-box;
+    line-height: 1;
+    overflow: hidden;
+}
+.header-col-r .hdr-txt, .header-col-c .hdr-txt, .header-col-l .hdr-txt {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.header-ornament-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 100%;
+    max-height: 20px;
+    line-height: 1;
+    vertical-align: middle;
+}
+.header-ornament-wrap img,
+.header-ornament-wrap svg {
+    max-height: 20px;
+    max-width: 100%;
+    width: auto;
+    object-fit: contain;
+    vertical-align: middle;
 }
 .header-col-r img, .header-col-r svg,
 .header-col-c img, .header-col-c svg,
@@ -1099,6 +1136,24 @@ body.tabs-not-ready #sidebar::before {
     width: 100%;
     position: relative;
     align-items: start;
+}
+
+/* Explicit structural fallback for a short terminal fragment with no legal two-column split.
+   The visible fragment spans both text columns; the opposite column and central rule are hidden.
+   Side-margin tracks remain intact so existing side-note anchors retain their side. */
+.block-2col.layout-full-width-terminal-residual .col-gutter-divider {
+    display: none !important;
+}
+.block-2col.layout-full-width-terminal-residual[data-layout-balance-fallback-side="right"] .right-col,
+.block-2col.layout-full-width-terminal-residual[data-layout-balance-fallback-side="left"] .left-col {
+    grid-column: 3 / 6 !important;
+    width: var(--layout-residual-width, 100%) !important;
+    min-width: 0;
+    justify-self: center;
+}
+.block-2col.layout-full-width-terminal-residual[data-layout-balance-fallback-side="right"] .left-col,
+.block-2col.layout-full-width-terminal-residual[data-layout-balance-fallback-side="left"] .right-col {
+    display: none !important;
 }
 
 /* קו מפריד אנכי בין הטורים (יושב בתוך עמודה 4 - מרזב) */
@@ -1193,6 +1248,27 @@ body.tabs-not-ready #sidebar::before {
     justify-content: center !important;
     flex-shrink: 0 !important;
     margin-top: -0.08em;
+}
+
+/* Independent H2-title top/bottom ornaments, separate from siman ornaments. */
+.h2-title-ornament-top,
+.h2-title-ornament-bottom {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    line-height: 1;
+    margin: 6px auto;
+    flex-shrink: 0;
+}
+.h2-title-ornament-top svg,
+.h2-title-ornament-bottom svg,
+.h2-title-ornament-top img,
+.h2-title-ornament-bottom img {
+    max-height: 35px;
+    max-width: 65%;
+    object-fit: contain;
+    display: inline-block;
 }
 
 .title-level-4 {

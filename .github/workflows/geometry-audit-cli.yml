@@ -1,0 +1,203 @@
+name: Geometry audit CLI
+
+concurrency:
+  group: geometry-audit-cli-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [V22]
+  pull_request:
+    branches: [V22]
+  workflow_dispatch:
+
+jobs:
+  geometry-audit-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Check CLI syntax
+        run: node --check tools/geometry-audit-cli.js
+      - name: Check CLI help
+        run: node tools/geometry-audit-cli.js --help
+      - name: Run geometry audit smoke test
+        run: node tools/geometry-audit-cli.js --input ./tests/fixtures/geometry-audit-smoke.txt --report ./artifacts/smoke-report.json --summary ./artifacts/smoke-summary.md --fail-on none --repeat-check
+      - name: Run no-legal-two-column-split regression fixture
+        run: node tools/geometry-audit-cli.js --input ./tests/fixtures/no-legal-two-column-split.txt --report ./artifacts/no-legal-split-report.json --summary ./artifacts/no-legal-split-summary.md --fail-on none
+      - name: Assert no-legal-split decision is explicit and complete
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync('./artifacts/no-legal-split-report.json', 'utf8'));
+          const records = report.geometry?.layoutDecisionRecords || [];
+          const matches = records.filter(record => {
+            const selection = record.decision?.selection;
+            return selection?.status === 'skipped' &&
+              selection?.routing === 'balanceColumns' &&
+              selection?.skipReason === 'no-legal-two-column-split' &&
+              selection?.fallback === 'full-width-terminal-residual' &&
+              ['left', 'right'].includes(selection?.fallbackSide) &&
+              selection?.candidateCount === 0 &&
+              selection?.selectedCandidateIndex === null &&
+              Number.isFinite(selection?.fallbackHeightBefore) &&
+              Number.isFinite(selection?.fallbackHeightAfter);
+          });
+          if (matches.length === 0) {
+            console.error('Expected an explicit full-width terminal-residual fallback with zero candidates, declared side, before/after heights, and no selected candidate. Records:', records.map(record => ({pageLabel: record.pageLabel, decision: record.decision?.selection})));
+            process.exit(1);
+          }
+          const fallbacks = (report.audit?.issues || []).filter(issue =>
+            issue.kind === 'structural-fallback' &&
+            issue.balanceOutcome === 'full-width-terminal-residual');
+          if (!fallbacks.some(issue => issue.fallbackValid === true && issue.severity === 'low')) {
+            console.error('Expected the geometry audit to validate the full-width residual structure:', fallbacks);
+            process.exit(1);
+          }
+          if ((report.audit?.issues || []).some(issue =>
+              issue.kind === 'imbalance' && issue.balanceOutcome === 'one-column-empty' && issue.severity === 'high')) {
+            console.error('The dedicated terminal-residual fixture must not retain a high-severity empty-column finding:', report.audit.issues.filter(issue => issue.kind === 'imbalance'));
+            process.exit(1);
+          }
+          console.log(JSON.stringify({ explicitNoLegalSplitDecisions: matches.length, validatedStructuralFallbacks: fallbacks.length, decisionContract: 'PASS' }));
+          NODE
+      - name: Run completely empty column balance regression
+        run: node tools/geometry-audit-cli.js --input ./tests/fixtures/geometry-audit-smoke.txt --report ./artifacts/empty-column-report.json --summary ./artifacts/empty-column-summary.md --fail-on none --test-empty-column-balance
+      - name: Assert completely empty column is reported as imbalance
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync('./artifacts/empty-column-report.json', 'utf8'));
+          const issues = report.audit?.issues || [];
+          const emptyColumn = issues.filter(issue =>
+            issue.kind === 'imbalance' &&
+            issue.balanceOutcome === 'one-column-empty' &&
+            issue.injectedEmptyColumnTest === true &&
+            issue.rightH < 1 && issue.leftH > 1);
+          if (emptyColumn.length === 0) {
+            console.error('Expected the specifically tagged test block to report rightH < 1 and leftH > 1 after the right column is forced to zero height. Findings:', issues.filter(issue => issue.kind === 'imbalance'));
+            process.exit(1);
+          }
+          if (!emptyColumn.some(issue => issue.columnGeometrySource?.right === 'live-dom-including-zero-height' ||
+                                        issue.columnGeometrySource?.left === 'live-dom-including-zero-height')) {
+            console.error('Expected zero-height geometry to be recovered from the live DOM:', emptyColumn);
+            process.exit(1);
+          }
+          console.log(JSON.stringify({ emptyColumnBalanceFindings: emptyColumn.length, zeroHeightDomRecovery: 'PASS' }));
+          NODE
+      - name: Run missing column element regression
+        run: node tools/geometry-audit-cli.js --input ./tests/fixtures/geometry-audit-smoke.txt --report ./artifacts/missing-column-report.json --summary ./artifacts/missing-column-summary.md --fail-on none --test-missing-column-element
+      - name: Assert missing column is not mislabeled as empty
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync('./artifacts/missing-column-report.json', 'utf8'));
+          const issues = report.audit?.issues || [];
+          const missing = issues.filter(issue =>
+            issue.kind === 'imbalance' &&
+            issue.injectedMissingColumnTest === true &&
+            issue.balanceOutcome === 'missing-column-element' &&
+            issue.missingColumnSide === 'left' &&
+            issue.columnElementPresent?.left === false &&
+            issue.severity === 'high');
+          if (missing.length === 0) {
+            console.error('Expected a high-severity missing-column-element finding distinct from one-column-empty:', issues.filter(issue => issue.kind === 'imbalance'));
+            process.exit(1);
+          }
+          if (missing.some(issue => issue.balanceOutcome === 'one-column-empty')) {
+            console.error('A missing DOM column must never be classified as an existing empty column:', missing);
+            process.exit(1);
+          }
+          console.log(JSON.stringify({ missingColumnElementFindings: missing.length, distinctClassification: 'PASS' }));
+          NODE
+      - name: Run sparse-page and square-bracket diagnostic fixture
+        run: node tools/geometry-audit-cli.js --input ./tests/fixtures/geometry-audit-diagnostics-smoke.txt --report ./artifacts/diagnostics-smoke-report.json --summary ./artifacts/diagnostics-smoke-summary.md --fail-on none
+      - name: Assert sparse-page and square-bracket diagnostics
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync('./artifacts/diagnostics-smoke-report.json', 'utf8'));
+          const issues = report.audit?.issues || [];
+          const sparse = issues.filter(issue => issue.kind === 'sparse-page');
+          const brackets = issues.filter(issue => issue.kind === 'square-bracket-scope');
+          if (sparse.length !== 1) {
+            console.error('Expected exactly one sparse-page finding: the short final chapter page; the preceding chapter-end page must be exempt. Findings:', sparse, 'audit summary:', report.audit?.summary);
+            process.exit(1);
+          }
+          if (!sparse[0].startsChapter || !(sparse[0].excludedChapterStartPx > 0) || !(sparse[0].availableBodyHeightPx > 0)) {
+            console.error('Sparse-page report must expose and apply the chapter-start exclusion:', sparse[0]);
+            process.exit(1);
+          }
+          if (brackets.length === 0) {
+            console.error('Expected the cross-paragraph [] source scope to trigger square-bracket-scope; audit summary:', report.audit?.summary);
+            process.exit(1);
+          }
+          const malformedScope = brackets.find(issue =>
+            issue.startTokenId && issue.endTokenId &&
+            issue.crossedParagraph !== (issue.startTokenId !== issue.endTokenId)
+          );
+          if (malformedScope) {
+            console.error('crossedParagraph must reflect source token identity, not merely distinct DOM fragments:', malformedScope);
+            process.exit(1);
+          }
+          if (brackets.some(issue => !Number.isInteger(issue.startFragmentIndex) || !Number.isInteger(issue.endFragmentIndex))) {
+            console.error('Square-bracket scope diagnostics must include DOM fragment indexes:', brackets);
+            process.exit(1);
+          }
+          const parenthesisScope = report.geometry?.parenthesisScopeSummary;
+          if (!parenthesisScope ||
+              parenthesisScope.pairedParenthesisCount < 1 ||
+              parenthesisScope.unmatchedOpenCountAtDocumentEnd !== 0 ||
+              parenthesisScope.unmatchedCloseCount !== 0) {
+            console.error('A parenthesis pair surrounding a multi-paragraph square-bracket note must remain paired; a closing parenthesis inside the bracketed note must not close the outer scope:', parenthesisScope);
+            process.exit(1);
+          }
+          const continuationStyled = (report.geometry?.layoutDecisionRecords || []).some(record =>
+            ['right', 'left'].some(side =>
+              (record.parenScopeDiagnostic?.[side]?.samples || []).some(sample =>
+                sample.hasParenTextStyle && sample.preview.includes('ולאחריה מעט טקסט נוסף'))));
+          if (!continuationStyled) {
+            console.error('The paragraph after a cross-paragraph square-bracket note must retain the enclosing parenthesis style:', (report.geometry?.layoutDecisionRecords || []).map(record => record.parenScopeDiagnostic));
+            process.exit(1);
+          }
+          console.log(JSON.stringify({
+            sparsePageFindings: sparse.length,
+            squareBracketScopeFindings: brackets.length,
+            crossParagraphBracketExclusion: 'PASS',
+            enclosingParenthesisContinuation: 'PASS'
+          }));
+          NODE
+      - name: Run active-ornament geometry smoke test
+        run: node tools/geometry-audit-cli.js --input ./tests/fixtures/ornament-geometry-smoke.txt --settings ./tests/fixtures/ornament-geometry-settings.json --report ./artifacts/ornament-smoke-report.json --summary ./artifacts/ornament-smoke-summary.md --fail-on none --require-geometry-features
+      - name: Run distinct recto/verso header geometry smoke test
+        run: node tools/geometry-audit-cli.js --input ./tests/fixtures/ornament-geometry-parity-smoke.txt --settings ./tests/fixtures/ornament-geometry-parity-settings.json --report ./artifacts/ornament-parity-report.json --summary ./artifacts/ornament-parity-summary.md --fail-on none --require-geometry-features
+      - name: Run active H2 title top/bottom geometry smoke test
+        run: node tools/geometry-audit-cli.js --input ./tests/fixtures/ornament-geometry-smoke.txt --settings ./tests/fixtures/ornament-geometry-title-tb-settings.json --report ./artifacts/ornament-title-tb-report.json --summary ./artifacts/ornament-title-tb-summary.md --fail-on none --require-geometry-features
+      - name: Upload smoke reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: geometry-audit-smoke-report
+          path: |
+            artifacts/smoke-report.json
+            artifacts/smoke-summary.md
+            artifacts/no-legal-split-report.json
+            artifacts/no-legal-split-summary.md
+            artifacts/diagnostics-smoke-report.json
+            artifacts/diagnostics-smoke-summary.md
+            artifacts/ornament-smoke-report.json
+            artifacts/ornament-smoke-summary.md
+            artifacts/ornament-parity-report.json
+            artifacts/ornament-parity-summary.md
+            artifacts/ornament-title-tb-report.json
+            artifacts/ornament-title-tb-summary.md
+          if-no-files-found: ignore

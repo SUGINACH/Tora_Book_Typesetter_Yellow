@@ -562,10 +562,10 @@ function resolveHeaderAlign(align, slot) {
    tocFallback: טקסט חלופי כשהכותרת ריקה (בעמודי תוכן העניינים - שם התוכן). */
 function buildHeaderGridHTML(pNum, h1Title, h2Title, h3Title, bookTitle, customR, customC, customL, pageContext = {}, tocFallback = '') {
     const isEven = (pNum % 2 === 0);
-    // טוגל "פצל שם ספר": קובע בעצמו את תוכן הכותרת הימנית (חצי ראשון של שם הספר) והשמאלית (חצי שני),
-    // בלי לבחור ידנית בכל כותרת, ומבטל את ההחלפה בין עמודים (כותרות מתחלפות) - שתי האפשרויות סותרות.
+    const isDistinctEvenOdd = !!EngineInputs.el('hdr-distinct-even-odd')?.checked;
+    const isVerso = isEven && isDistinctEvenOdd;
     const isSplitTitle = !!EngineInputs.el('hdr-title-split')?.checked;
-    const isAlternating = !isSplitTitle && EngineInputs.el('hdr-alternating')?.checked;
+    const isAlternating = !isSplitTitle && !isDistinctEvenOdd && EngineInputs.el('hdr-alternating')?.checked;
 
     let hdrRType = EngineInputs.el('hdr-r-type')?.value || 'h1';
     let hdrCType = EngineInputs.el('hdr-c-type')?.value || 'spear';
@@ -577,11 +577,35 @@ function buildHeaderGridHTML(pNum, h1Title, h2Title, h3Title, bookTitle, customR
     let hdrLAlign = EngineInputs.el('hdr-l-align')?.value || 'left';
 
     let hdrRFont = EngineInputs.el('f-hdr-r')?.value || "'Livorna','David Libre',serif";
-    let hdrRSize = (EngineInputs.el('s-hdr-r')?.value || 13) + 'pt';
+    let hdrCFont = EngineInputs.el('f-hdr-c')?.value || 'serif';
     let hdrLFont = EngineInputs.el('f-hdr-l')?.value || "'Livorna','David Libre',serif";
+    let hdrRSize = (EngineInputs.el('s-hdr-r')?.value || 13) + 'pt';
+    let hdrCSize = (EngineInputs.el('s-hdr-c')?.value || 11) + 'pt';
     let hdrLSize = (EngineInputs.el('s-hdr-l')?.value || 13) + 'pt';
 
-    let cR = customR, cL = customL;
+    let cR = customR, cC = customC, cL = customL;
+    if (isVerso) {
+        const resolveVersoType = (side, oddType) => {
+            const selected = EngineInputs.el('hdr-verso-' + side + '-type')?.value || 'same_as_odd';
+            return { selected, resolved: selected === 'same_as_odd' ? oddType : selected };
+        };
+        const versoR = resolveVersoType('r', hdrRType);
+        const versoC = resolveVersoType('c', hdrCType);
+        const versoL = resolveVersoType('l', hdrLType);
+        hdrRType = versoR.resolved; hdrCType = versoC.resolved; hdrLType = versoL.resolved;
+        hdrRAlign = EngineInputs.el('hdr-verso-r-align')?.value || hdrRAlign;
+        hdrCAlign = EngineInputs.el('hdr-verso-c-align')?.value || hdrCAlign;
+        hdrLAlign = EngineInputs.el('hdr-verso-l-align')?.value || hdrLAlign;
+        hdrRFont = EngineInputs.el('f-hdr-verso-r')?.value || hdrRFont;
+        hdrCFont = EngineInputs.el('f-hdr-verso-c')?.value || hdrCFont;
+        hdrLFont = EngineInputs.el('f-hdr-verso-l')?.value || hdrLFont;
+        hdrRSize = (EngineInputs.el('s-hdr-verso-r')?.value || parseFloat(hdrRSize) || 13) + 'pt';
+        hdrCSize = (EngineInputs.el('s-hdr-verso-c')?.value || parseFloat(hdrCSize) || 11) + 'pt';
+        hdrLSize = (EngineInputs.el('s-hdr-verso-l')?.value || parseFloat(hdrLSize) || 13) + 'pt';
+        if (versoR.selected === 'custom') cR = EngineInputs.el('hdr-verso-r-custom')?.value || '';
+        if (versoC.selected === 'custom') cC = EngineInputs.el('hdr-verso-c-custom')?.value || '';
+        if (versoL.selected === 'custom') cL = EngineInputs.el('hdr-verso-l-custom')?.value || '';
+    }
 
     // היפוך תוכן (לא יישור) בעמודים זוגיים בעת הפעלת כותרות מתחלפות.
     // היישור נשאר צמוד לעמודה הפיזית ונפתר למטה דרך resolveHeaderAlign,
@@ -604,12 +628,25 @@ function buildHeaderGridHTML(pNum, h1Title, h2Title, h3Title, bookTitle, customR
         pageNum: toGematria(pNum)
     };
 
-    // טקסט כותרת עליונה נעטף ב-.hdr-txt: כשהטקסט ארוך מרוחב העמודה הוא נחתך בסופו עם "…" (ולא נחתך בתחילתו
-    // בלי סימן, כפי שקרה כשהטקסט היה צאצא ישיר של מיכל ה-flex). עיטורים (SVG) לא נעטפים.
-    const wrapHdrText = html => (html && !/^<span class="header-ornament-wrap"/.test(html)) ? `<span class="hdr-txt">${html}</span>` : html;
-    const hdrRHTML = wrapHdrText(renderHeaderSectionHTML(hdrRType, cR, h1Title, h2Title, h3Title, bookTitle, tocFallback, contextExtra));
-    const hdrCHTML = wrapHdrText(renderHeaderSectionHTML(hdrCType, customC, h1Title, h2Title, h3Title, bookTitle, tocFallback, contextExtra));
-    const hdrLHTML = wrapHdrText(renderHeaderSectionHTML(hdrLType, cL, h1Title, h2Title, h3Title, bookTitle, tocFallback, contextExtra));
+    // Ordinary header text is ellipsized; ornaments (built-in or external SVG/HTML) get
+    // a stable wrapper so their geometry can be measured and they are never treated as text.
+    const escapeHeaderAttr = value => String(value ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    const wrapHdrText = (html, type) => {
+        if (!html) return '';
+        const isOrnament = type === 'custom_img' ||
+            (typeof HEADER_ORNAMENTS !== 'undefined' && Object.prototype.hasOwnProperty.call(HEADER_ORNAMENTS, type)) ||
+            (typeof EXTERNAL_ALL_ORNAMENTS !== 'undefined' && Object.prototype.hasOwnProperty.call(EXTERNAL_ALL_ORNAMENTS, type));
+        if (isOrnament) {
+            const idAttr = ` data-ornament-id="${escapeHeaderAttr(type)}"`;
+            return /^<span class="header-ornament-wrap"/.test(html)
+                ? html.replace(/^<span class="header-ornament-wrap"/, `<span class="header-ornament-wrap"${idAttr}`)
+                : `<span class="header-ornament-wrap"${idAttr}>${html}</span>`;
+        }
+        return `<span class="hdr-txt">${html}</span>`;
+    };
+    const hdrRHTML = wrapHdrText(renderHeaderSectionHTML(hdrRType, cR, h1Title, h2Title, h3Title, bookTitle, tocFallback, contextExtra), hdrRType);
+    const hdrCHTML = wrapHdrText(renderHeaderSectionHTML(hdrCType, customC, h1Title, h2Title, h3Title, bookTitle, tocFallback, contextExtra), hdrCType);
+    const hdrLHTML = wrapHdrText(renderHeaderSectionHTML(hdrLType, cL, h1Title, h2Title, h3Title, bookTitle, tocFallback, contextExtra), hdrLType);
 
     // [חדש] "מיקום מספור: משולב בכותרת עליונה חיצונית" - מספר העמוד נכנס לפס הכותרת בפינה החיצונית
     // (שמאל בעמוד אי-זוגי וימין בזוגי - כמו מספור תחתון "חיצוני"; ההחלטה ב-CSS לפי מיקום העמוד בספר),
@@ -617,9 +654,10 @@ function buildHeaderGridHTML(pNum, h1Title, h2Title, h3Title, bookTitle, customR
     const pnInfo = formatPageNumberDisplay(pNum);
     const hdrPn = (pnInfo.pageNumPos === 'header_outer' && !!pnInfo.displayPageNum);
 
-    return `<div class="top-header-grid${hdrPn ? ' has-hdr-pn' : ''}">
+    const typeAttr = type => escapeHeaderAttr(type);
+    return `<div class="top-header-grid${hdrPn ? ' has-hdr-pn' : ''}" data-header-parity="${isEven ? 'even' : 'odd'}" data-header-distinct-mode="${isVerso ? 'verso' : 'recto'}" data-header-type-r="${typeAttr(hdrRType)}" data-header-type-c="${typeAttr(hdrCType)}" data-header-type-l="${typeAttr(hdrLType)}">
         <div class="header-col-r" style="text-align:${hdrRAlign}; justify-content:${hdrRAlign}; font-family:${hdrRFont}; font-size:${hdrRSize};">${hdrRHTML}</div>
-        <div class="header-col-c" style="text-align:${hdrCAlign}; justify-content:${hdrCAlign};">${hdrCHTML}</div>
+        <div class="header-col-c" style="text-align:${hdrCAlign}; justify-content:${hdrCAlign}; font-family:${hdrCFont}; font-size:${hdrCSize};">${hdrCHTML}</div>
         <div class="header-col-l" style="text-align:${hdrLAlign}; justify-content:${hdrLAlign}; font-family:${hdrLFont}; font-size:${hdrLSize};">${hdrLHTML}</div>${hdrPn ? `
         <span class="hdr-pagenum">${pnInfo.framedPageNum}</span>` : ''}
       </div>`;
@@ -761,20 +799,27 @@ function estimateSectionFillRatio(tokens) {
    - כותרת (רמות 2-6) לעולם לא נשארת לבדה בתחתית טור: היא עוברת יחד עם הפסקה שאחריה.
    ========================================================================== */
 function getSplitRules() {
-    const avoidWidows = EngineInputs.el('avoid-widows')?.checked ?? true;   // שורה בודדת בסוף טור/עמוד
-    const avoidOrphans = EngineInputs.el('avoid-orphans')?.checked ?? true; // שורה בודדת בראש טור/עמוד
-    return { minFirst: avoidWidows ? 2 : 1, minLast: avoidOrphans ? 2 : 1 };
+    // Preserve the existing UI IDs for saved-settings compatibility. Their labels in index.html
+    // define the semantics: avoid-widows is currently the bottom-of-column control (orphan risk),
+    // while avoid-orphans is the top-of-column control (widow risk).
+    const avoidSingleLineAtBottom = EngineInputs.el('avoid-widows')?.checked ?? true;
+    const avoidSingleLineAtTop = EngineInputs.el('avoid-orphans')?.checked ?? true;
+    // The first split chunk stays at the bottom of the current column; the remainder starts
+    // at the top of the next column.
+    return { minFirst: avoidSingleLineAtBottom ? 2 : 1, minLast: avoidSingleLineAtTop ? 2 : 1 };
 }
 
 /* כמה שורות להציב מפסקה בת totalLines שורות כשבפועל נכנסות fitLines שורות.
    מחזיר 0 כשאי אפשר לפצל בלי להפר את הכללים - הפסקה כולה (והכותרות שלפניה) עוברות לטור/עמוד הבא.
    mustPlace=true כשזו הפסקה הראשונה בעמוד ואין לאן לדחות (מונע לולאה אינסופית). */
-function resolveParagraphSplit(totalLines, fitLines, mustPlace) {
+function resolveParagraphSplit(totalLines, fitLines) {
     if (fitLines >= totalLines) return totalLines;
     const { minFirst, minLast } = getSplitRules();
     const k = Math.min(fitLines, totalLines - minLast);
     if (k >= minFirst) return k;
-    if (mustPlace && fitLines >= 1) return Math.max(1, Math.min(fitLines, totalLines - 1));
+
+    // Widow/orphan rules are hard constraints: never force a one-line fragment
+    // just to make progress. The page loop has a deterministic no-progress guard.
     return 0;
 }
 
@@ -820,11 +865,10 @@ const BALANCE_FINAL_JUSTIFY_MAX = 100; // תקרת ההפרש (px) שמיושר 
    למשיכת זנב יתום בן 1-2 שורות. בשילוב עם כיווץ עדין (allowBelowBase=1.5px), זה מאפשר
    לפתור יתומים בלי לכווץ יתר את התוכן ובלי לבזבז עמוד שלם על באפר גדול.
    איך זה עובד:
-   - stretchPageToBottom מקבל target שקטן ב-12px מהתחתית האמיתית — כלומר התוכן מתוח
-     רק עד 12px לפני תחתית העמוד. ה-12px האלה נשארים ריקים כבאפר.
-   - tryReclaimOrphanTail יכול להשתמש ב-12px האלה כחלק מ-currentFree.
-   - אם 12px לא מספיקים, compressColumnBy עם allowBelowBase=1.5 משלים את החסר
-     על חשבון כיווץ עדין של השורות. */
+   - 12px הם מרווח תכנון שמאפשר לנסות להחזיר יתום גם כשהמקום החופשי הראשוני קטן.
+   - tryReclaimOrphanTail רשאי להשתמש בקיבולת הכיווץ ובמרווח התכנון כדי לבדוק ניסיון.
+   - תנאי הקבלה הסופי קשיח: לאחר ההשמה, הבלוק חייב להישאר בתוך אזור הגוף (סטייה מרבית 0.5px);
+     אם לא, מסירים את היתום ומחזירים אטומית את כל שינויי הכיווץ ומוני ההערות. */
 const ORPHAN_RECLAIM_BUFFER = 12;
 
 /* ==========================================================================
@@ -857,6 +901,48 @@ function columnStretchCapacity(col, lhCap = JUSTIFY_MAX_LH_EXTRA) {
         cap += lines * Math.max(0, lhCap - (lh - base));
     });
     return cap;
+}
+
+/* Diagnostic-only capacity model matching justifyColumnVertically's actual default cap.
+   Keep this separate from columnStretchCapacity, whose historical default is 3px and
+   is also used by page-bottom stretching. */
+function getJustifyCapacityAudit(col, lhCap = null) {
+    const kids = Array.from(col.children);
+    let gapCapacity = 0;
+    let lineHeightCapacity = 0;
+    let totalLines = 0;
+    const paragraphs = [];
+    kids.forEach((p, index) => {
+        if (p.tagName !== 'P') return;
+        const { lh, lines } = paraLineInfo(p);
+        const base = parseFloat(p.getAttribute('data-base-lh')) || lh;
+        const currentExtra = Math.max(0, lh - base);
+        const maxExtra = lhCap === null
+            ? Math.max(JUSTIFY_MAX_LH_EXTRA, base * JUSTIFY_BALANCE_LH_RATIO)
+            : lhCap;
+        const remainingPerLine = Math.max(0, maxExtra - currentExtra);
+        const gapEligible = index < kids.length - 1;
+        const currentPaddingBottom = parseFloat(p.style.paddingBottom) || 0;
+        const remainingGap = gapEligible ? Math.max(0, JUSTIFY_MAX_GAP - currentPaddingBottom) : 0;
+        gapCapacity += remainingGap;
+        lineHeightCapacity += lines * remainingPerLine;
+        totalLines += lines;
+        paragraphs.push({
+            index, lines, lineHeight: lh, baseLineHeight: base,
+            currentExtraPerLine: currentExtra, remainingExtraPerLine: remainingPerLine,
+            gapEligible, currentPaddingBottom, remainingGap
+        });
+    });
+    return {
+        currentHeight: col.scrollHeight,
+        childCount: kids.length,
+        paragraphCount: paragraphs.length,
+        totalLines,
+        gapCapacity,
+        lineHeightCapacity,
+        totalCapacity: gapCapacity + lineHeightCapacity,
+        paragraphs
+    };
 }
 
 /* [חדש] קיבולת כיווץ של טור: כמה px אפשר לכווץ על-ידי הקטנת paddingBottom (עד 0) והקטנת
@@ -1014,7 +1100,7 @@ function tryReclaimOrphanTail(pageLayout, pendingTail, reservedNow, totalFlowH) 
     }
 
     // שטח פנוי נוכחי בתחתית העמוד (בין תחתית הבלוק האחרון לתחתית שטח הגוף, פחות עתודת הערות)
-    const flowBottom = flow.getBoundingClientRect().top + totalFlowH;
+    const flowBottom = flow.getBoundingClientRect().bottom;
     const currentFree = (flowBottom - reservedNow()) - lastBlock.getBoundingClientRect().bottom - 1;
 
     // אילו טורים לכווץ? הזנב היתום נכנס לטור שמאל (הטור השני שמתמלא).
@@ -1044,9 +1130,9 @@ function tryReclaimOrphanTail(pageLayout, pendingTail, reservedNow, totalFlowH) 
     pElem.setAttribute('data-raw-text', orphanText);
     pElem.innerHTML = createDropWord(orphanText, true, false, orphanLines);
     applyDelimiterStyles(pElem, 'body', getBodySizePt(), false);
-    if (orphanTok.endNote) {
-        pElem.appendChild(createNoteMarkerAndQueue(orphanTok.endNote, null, 'endnote'));
-    }
+    // Measurement must not mutate note queues/counters. The real endnote marker is
+    // created only after the orphan has passed the strict page-fit check.
+    if (orphanTok.endNote) pElem.appendChild(createDryEndNoteMarker());
 
     // מדידה: מוסיפים זמנית ל-lCol ומודדים את התוספת האמיתית
     const colHBefore = lCol.scrollHeight;
@@ -1057,9 +1143,8 @@ function tryReclaimOrphanTail(pageLayout, pendingTail, reservedNow, totalFlowH) 
     // צריך מקום לפסקה היתומה. currentFree שמור להערות. נשתמש בבולם קטן (2px) בלבד.
     const neededPx = orphanActualH + 2;
 
-    // [Option C] סך המקום הפנוי = שטח פנוי נוכחי + קיבולת כיווץ + באפר גלישה (ORPHAN_RECLAIM_BUFFER).
-    // הבאפר מאפשר לבלוק לגלוש עד 12px מתחת לתחתית הרגילה — מרווח חירום שמשתלם כדי למנוע יתום.
-    // בדיקת הגלישה בפועל מתבצעת אחרי הנחת היתום (ראה newFree check למטה).
+    // [Option C] הבאפר הוא סף מקדים לניסיון בלבד, לא הרשאה לגלוש מעבר לאזור הגוף.
+    // אחרי הנחת היתום נבדקת הגאומטריה בפועל; חריגה של יותר מ-0.5px מחייבת rollback מלא.
     if (currentFree + totalCap + ORPHAN_RECLAIM_BUFFER < neededPx) {
         if (typeof window.__reclaimDebug !== 'undefined') window.__reclaimDebug.push({
             reason: 'not_enough_space',
@@ -1074,6 +1159,26 @@ function tryReclaimOrphanTail(pageLayout, pendingTail, reservedNow, totalFlowH) 
         });
         return false;
     }
+
+    // Snapshot the compressible column before any speculative mutation. If the actual
+    // post-placement geometry violates the page-fit invariant, both the orphan and every
+    // compression style/attribute must be rolled back atomically.
+    const compressedColumnSnapshot = Array.from(lCol.querySelectorAll('*')).map(el =>
+        [el, Array.from(el.attributes).map(attr => [attr.name, attr.value])]);
+    const endnoteQueueLengthBefore = endnoteQueueForPart.length;
+    const endnoteCounterBefore = noteCounters.endnote || 0;
+    const noteUidCounterBefore = noteUidCounter;
+    const restoreFailedReclaim = () => {
+        if (pElem.parentNode) pElem.parentNode.removeChild(pElem);
+        for (const [el, attrs] of compressedColumnSnapshot) {
+            for (const attr of Array.from(el.attributes)) el.removeAttribute(attr.name);
+            for (const [name, value] of attrs) el.setAttribute(name, value);
+        }
+        endnoteQueueForPart.length = endnoteQueueLengthBefore;
+        noteCounters.endnote = endnoteCounterBefore;
+        noteUidCounter = noteUidCounterBefore;
+        repositionBlockNotes(lastBlock, Math.max(rCol.scrollHeight, lCol.scrollHeight));
+    };
 
     // הפעלת כיווץ (רק כמה שצריך)
     const compressNeeded = Math.max(0, neededPx - currentFree);
@@ -1090,16 +1195,14 @@ function tryReclaimOrphanTail(pageLayout, pendingTail, reservedNow, totalFlowH) 
     // הנחת הזנב היתום בטור שמאל (הטור השני מתמלא אחרון, אז יש לו מקום)
     lCol.appendChild(pElem);
 
-    // וידוא שהבלוק עדיין נכנס בעמוד (עם באפר גלישה של ORPHAN_RECLAIM_BUFFER)
-    // [Option C] מאפשרים לבלוק לגלוש עד 12px מתחת לתחתית הרגילה — זה הבאפר שהוקצה למשיכת יתומים.
-    // הגלישה הזו היא "מרווח חירום" שמתקבל כדי למנוע יתום חזותי בראש העמוד הבא.
-    const newFree = (flowBottom - reservedNow()) - lastBlock.getBoundingClientRect().bottom - 1;
-    if (newFree < -ORPHAN_RECLAIM_BUFFER) {
-        // גלש מעבר לבאפר — ביטול ההנחה והחזרת false
-        lCol.removeChild(pElem);
+    // The 12px value is a feasibility allowance, not permission to overflow the reserved
+    // page body. Final acceptance requires the rendered block to remain within 0.5px.
+    let newFree = (flowBottom - reservedNow()) - lastBlock.getBoundingClientRect().bottom - 1;
+    if (newFree < -0.5) {
+        restoreFailedReclaim();
         if (typeof window.__reclaimDebug !== 'undefined') window.__reclaimDebug.push({
-            reason: 'overflow_after_placement',
-            newFree: Math.round(newFree),
+            reason: 'strict-fit-rollback-after-placement',
+            newFree: Math.round(newFree * 1000) / 1000,
             orphanActualH: Math.round(orphanActualH),
             compressNeeded: Math.round(compressNeeded),
             actualCompressed: Math.round(actualCompressed),
@@ -1108,13 +1211,30 @@ function tryReclaimOrphanTail(pageLayout, pendingTail, reservedNow, totalFlowH) 
             lColH_before: Math.round(lColH_before),
             rColH_afterCompress: Math.round(rColH_afterCompress),
             lColH_afterCompress: Math.round(lColH_afterCompress),
-            rColH_afterOrphan: Math.round(rCol.scrollHeight),
-            lColH_afterOrphan: Math.round(lCol.scrollHeight),
             blockBottom: Math.round(lastBlock.getBoundingClientRect().bottom),
             flowBottom: Math.round(flowBottom),
             reservedNow: Math.round(reservedNow())
         });
         return false;
+    }
+
+    // Only now enqueue the real endnote marker; verify its final measured geometry too.
+    if (orphanTok.endNote) {
+        const dryMarker = pElem.querySelector('.note-marker');
+        const realMarker = createNoteMarkerAndQueue(orphanTok.endNote, null, 'endnote');
+        if (dryMarker) dryMarker.replaceWith(realMarker);
+        newFree = (flowBottom - reservedNow()) - lastBlock.getBoundingClientRect().bottom - 1;
+        if (newFree < -0.5) {
+            restoreFailedReclaim();
+            if (typeof window.__reclaimDebug !== 'undefined') window.__reclaimDebug.push({
+                reason: 'strict-fit-rollback-after-endnote-marker',
+                newFree: Math.round(newFree * 1000) / 1000,
+                orphanActualH: Math.round(orphanActualH),
+                blockBottom: Math.round(lastBlock.getBoundingClientRect().bottom),
+                flowBottom: Math.round(flowBottom)
+            });
+            return false;
+        }
     }
 
     // הצלחה! הקורא אחראי לעדכן pendingWordTokens = null ו-tokenIndex++
@@ -1157,24 +1277,29 @@ function justifyColumnVertically(col, targetHeight, styleObj, maxStretch = 60, l
         if (!(rest > 0.5)) break;
         const infos = kids.filter(k => k.tagName === 'P').map(p => {
             const { lh, lines } = paraLineInfo(p);
-            return { p, lh, lines, base: parseFloat(p.getAttribute('data-base-lh')) || lh };
+            const win = p.querySelector('.first-word-window');
+            // The float's height also contributes to the column's total height. Use the
+            // same effective height that the adjustment below will scale, so its growth
+            // is included in the denominator rather than added on top of the requested
+            // line-height increase (which caused overshoot on one-paragraph columns).
+            const setH = win ? parseFloat(win.style.height) : NaN;
+            const winH = win ? ((pass > 0 && isFinite(setH) && setH > 0) ? setH : win.offsetHeight) : 0;
+            const stretchUnits = lines + (win && winH > 0 && lh > 0 ? (winH + 1) / lh : 0);
+            return { p, lh, lines, win, winH, stretchUnits, base: parseFloat(p.getAttribute('data-base-lh')) || lh };
         });
-        const totalLines = infos.reduce((a, i) => a + i.lines, 0);
-        if (!(totalLines > 0)) break;
-        const e = rest / totalLines;
+        const totalStretchUnits = infos.reduce((a, i) => a + i.stretchUnits, 0);
+        if (!(totalStretchUnits > 0)) break;
+        const e = rest / totalStretchUnits;
         let changed = false;
         infos.forEach(i => {
             const cap = (lhCap === null) ? Math.max(JUSTIFY_MAX_LH_EXTRA, i.base * JUSTIFY_BALANCE_LH_RATIO) : lhCap;
             const newLh = Math.min(i.lh + e, i.base + cap);
             if (newLh <= i.lh + 0.01) return;
-            const win = i.p.querySelector('.first-word-window');
-            // במעבר ראשון כמו במקור (offsetHeight); במעברים נוספים נשענים על הגובה המדויק שנקבע קודם, בלי נדידת עיגול
-            const setH = win ? parseFloat(win.style.height) : NaN;
-            const winH = win ? ((pass > 0 && isFinite(setH) && setH > 0) ? setH : win.offsetHeight) : 0;
             if (!i.p.hasAttribute('data-base-lh')) i.p.setAttribute('data-base-lh', String(i.lh));
             i.p.style.lineHeight = newLh + 'px';
-            // החלון גדל באותו יחס, כדי שמספר השורות שמתחתיו/לצדו לא ישתנה (כולל השוליים הקבועים שלו - 1px)
-            if (win && winH > 0) win.style.height = (((winH + 1) * newLh / i.lh) - 1) + 'px';
+            // Scale the first-word float in the same ratio, but account for its height
+            // in totalStretchUnits above to avoid counting its growth twice.
+            if (i.win && i.winH > 0) i.win.style.height = (((i.winH + 1) * newLh / i.lh) - 1) + 'px';
             changed = true;
         });
         if (!changed) break;
@@ -1225,10 +1350,12 @@ function shrinkColumnVertically(col, targetHeight, styleObj, maxShrink = 60) {
             const setH = win ? parseFloat(win.style.height) : NaN;
             const winH = win ? ((isFinite(setH) && setH > 0) ? setH : win.offsetHeight) : 0;
             i.p.style.lineHeight = newLh + 'px';
-            // החלון מוקטן באותו יחס, עם רצפת מינימום (לא מתחת לגובה הטבעי ב-base)
+            // first-word-window מייצג את אזור האות/המילה המוגדלת, לא את כל גובה הפסקה.
+            // רצפה של base * numLines הייתה מגדילה חלון טבעי של ~30px לגובה של פסקה שלמה
+            // (מאות פיקסלים) בזמן כיווץ, וגורמת לאיזון הגלובלי להיכשל. שומרים רק על יחס
+            // שינוי גובה השורה; את גובה החלון הטבעי קובעת המדידה המקורית של הרכיב.
             if (win && winH > 0) {
-                const minWinH = i.base * i.lines - 1; // רצפה: base * numLines (בערך)
-                const newWinH = Math.max(minWinH, ((winH + 1) * newLh / i.lh) - 1);
+                const newWinH = Math.max(0, ((winH + 1) * newLh / i.lh) - 1);
                 win.style.height = newWinH + 'px';
             }
             changed = true;
@@ -1242,10 +1369,78 @@ function shrinkColumnVertically(col, targetHeight, styleObj, maxShrink = 60) {
    freeSpace = הרווח הפנוי בפועל (מדוד) בין תחתית הבלוק לתחתית השטח הפנוי בעמוד.
    בבלוק דו-טורי שני הטורים נמתחים לאותו יעד, והיעד מוגבל ליכולת המתיחה של הטור החלש יותר -
    כדי שתחתיות שני הטורים תמיד יישארו על אותו קו (עדיף פער קטן בתחתית העמוד מטורים לא מיושרים). */
+const layoutGeometryStageSnapshots = new WeakMap();
+
+function recordLayoutGeometryStage(block, stage, bodyFlow, extra = {}) {
+    if (!block || !block.setAttribute) return;
+    try {
+        let diagnostic = {};
+        try {
+            diagnostic = JSON.parse(block.getAttribute('data-layout-stage-geometry-diagnostic') || '{}');
+        } catch (_) { diagnostic = {}; }
+        if (!diagnostic.stages || typeof diagnostic.stages !== 'object') diagnostic.stages = {};
+        const rect = block.getBoundingClientRect();
+        const flowRect = bodyFlow?.getBoundingClientRect?.() || null;
+        const right = block.querySelector('.right-col');
+        const left = block.querySelector('.left-col');
+        const round = value => Number.isFinite(value) ? Math.round(value * 1000) / 1000 : null;
+        diagnostic.schemaVersion = 1;
+        diagnostic.stages[stage] = {
+            flow: flowRect ? {
+                top: round(flowRect.top), bottom: round(flowRect.bottom), height: round(flowRect.height),
+                clientHeight: bodyFlow.clientHeight, scrollHeight: bodyFlow.scrollHeight
+            } : null,
+            block: {
+                top: round(rect.top), bottom: round(rect.bottom), height: round(rect.height),
+                topOffset: flowRect ? round(rect.top - flowRect.top) : null,
+                bottomOverflow: flowRect ? round(rect.bottom - flowRect.bottom) : null
+            },
+            columns: {
+                rightHeight: right ? right.scrollHeight : null,
+                leftHeight: left ? left.scrollHeight : null,
+                innerHeight: Math.max(right?.scrollHeight || 0, left?.scrollHeight || 0),
+                outerMinusInner: round(rect.height - Math.max(right?.scrollHeight || 0, left?.scrollHeight || 0))
+            },
+            ...extra
+        };
+        layoutGeometryStageSnapshots.set(block, diagnostic);
+        block.setAttribute('data-layout-stage-geometry-diagnostic', JSON.stringify(diagnostic));
+    } catch (_) {
+        block.setAttribute('data-layout-stage-geometry-diagnostic-error', stage);
+    }
+}
+
 function stretchLastBlockToBottom(bodyFlow, freeSpace, styleObj, maxStretch) {
     if (!(freeSpace > 0.5 && freeSpace <= maxStretch)) return false;
     const last = bodyFlow.lastElementChild;
     if (!last) return false;
+
+    // A column's scrollHeight does not necessarily equal the outer grid item's
+    // rendered height (paragraph margins, line boxes and grid sizing contribute
+    // to the latter). Snapshot inline styles so the stretch can be rolled back
+    // if its *measured outer-box growth* exceeds the real free space.
+    const snapshotElementAttributes = () => Array.from(last.querySelectorAll('*'))
+        .map(el => [el, Array.from(el.attributes).map(attr => [attr.name, attr.value])]);
+    const restoreElementAttributes = snapshot => {
+        for (const [el, attributes] of snapshot) {
+            for (const attr of Array.from(el.attributes)) el.removeAttribute(attr.name);
+            for (const [name, value] of attributes) el.setAttribute(name, value);
+        }
+    };
+    const initialOuterHeight = last.getBoundingClientRect().height;
+    const snapshot = snapshotElementAttributes();
+    const stretchFitsOuterBox = () => {
+        const actualGrowth = last.getBoundingClientRect().height - initialOuterHeight;
+        if (actualGrowth <= freeSpace + 0.5) return true;
+        restoreElementAttributes(snapshot);
+        repositionBlockNotes(last, Math.max(
+            last.querySelector('.right-col')?.scrollHeight || 0,
+            last.querySelector('.left-col')?.scrollHeight || 0,
+            last.querySelector('.single-wide-col')?.scrollHeight || 0
+        ));
+        return false;
+    };
+
     if (last.classList.contains('block-2col')) {
         const rCol = last.querySelector('.right-col');
         const lCol = last.querySelector('.left-col');
@@ -1257,6 +1452,7 @@ function stretchLastBlockToBottom(bodyFlow, freeSpace, styleObj, maxStretch) {
         if (target - top < 0.5) return false;
         justifyColumnVertically(rCol, target, styleObj, maxStretch + 40, JUSTIFY_MAX_LH_EXTRA);
         justifyColumnVertically(lCol, target, styleObj, maxStretch + 40, JUSTIFY_MAX_LH_EXTRA);
+        if (!stretchFitsOuterBox()) return false;
         repositionBlockNotes(last, Math.max(rCol.scrollHeight, lCol.scrollHeight));
         return true;
     }
@@ -1267,6 +1463,7 @@ function stretchLastBlockToBottom(bodyFlow, freeSpace, styleObj, maxStretch) {
         const target = Math.min(h + freeSpace, h + columnStretchCapacity(col));
         if (target - h < 0.5) return false;
         justifyColumnVertically(col, target, styleObj, maxStretch + 1, JUSTIFY_MAX_LH_EXTRA);
+        if (!stretchFitsOuterBox()) return false;
         repositionBlockNotes(last, col.scrollHeight);   // הערות צד של ההקדמה נשארות מול הפסקאות שלהן אחרי המתיחה
         return true;
     }
@@ -1321,10 +1518,43 @@ function repositionBlockNotes(block, boundaryHeight) {
      טור הימני, ואחרי כותרת חייבות להישאר לפחות 2 שורות מהפסקה.
    - פיצול שנכנס בגובה הפנוי (availableHeight) תמיד עדיף על פיצול שלא נכנס;
      בין פיצולים שווי-מעמד נבחר הקרוב ביותר לגובה שווה (בשוויון: טור ימין גבוה יותר).
-   - החיפוש בינארי (diff = R-L עולה מונוטונית עם נקודת הפיצול) ולא סריקה מלאה: מהיר פי כמה.
+   - החיפוש הוא סריקה מלאה ודטרמיניסטית של כל המועמדים; אין להסתמך על מונוטוניות של הפרשי הגבהים.
    - חלק פסקה שממשיך לעמוד הבא נשאר p-cut, וסימון הערת סיום מוצמד לסוף הפסקה האמיתי.
    ========================================================================== */
 function balanceColumns(block, colWidth, styleObj, snapshot, availableHeight = Infinity) {
+    block.setAttribute('data-layout-balance-called', 'true');
+    block.setAttribute('data-layout-balance-routing', 'balanceColumns');
+    block.setAttribute('data-layout-balance-available', String(availableHeight));
+    block.setAttribute('data-layout-balance-input-height', String(block.getBoundingClientRect().height));
+    block.classList.remove('layout-full-width-terminal-residual');
+    block.removeAttribute('data-layout-balance-fallback-side');
+    block.removeAttribute('data-layout-balance-fallback-height-before');
+    block.removeAttribute('data-layout-balance-fallback-height-after');
+    block.removeAttribute('data-layout-balance-fallback-width');
+    block.removeAttribute('data-layout-balance-fallback-sparse-line');
+    block.setAttribute('data-layout-balance-status', 'started');
+    block.setAttribute('data-layout-balance-skip-reason', '');
+    block.setAttribute('data-layout-balance-fallback', 'none');
+    // A block can pass through balancing more than once. Clear selection outputs first,
+    // otherwise a later no-candidate/early-return path could serialize a stale winner.
+    [
+        'data-layout-balance-candidates',
+        'data-layout-balance-items',
+        'data-layout-balance-fits',
+        'data-layout-balance-valid',
+        'data-layout-balance-right',
+        'data-layout-balance-left',
+        'data-layout-balance-over',
+        'data-layout-balance-diff',
+        'data-layout-balance-selected-candidate',
+        'data-layout-balance-candidate-table',
+        'data-layout-balance-split-item-index',
+        'data-layout-balance-split-line-count',
+        'data-layout-balance-selection-score',
+        'data-layout-balance-selection-policy',
+        'data-layout-balance-right-part-lines',
+        'data-layout-balance-left-part-lines'
+    ].forEach(attribute => block.removeAttribute(attribute));
     if (snapshot) {
         footnoteQueueForPage.length = snapshot.footnoteQueueLen;
         endnoteQueueForPart.length = snapshot.endnoteQueueLen;
@@ -1335,9 +1565,25 @@ function balanceColumns(block, colWidth, styleObj, snapshot, availableHeight = I
 
     const rCol = block.querySelector('.right-col');
     const lCol = block.querySelector('.left-col');
-    if (!rCol || !lCol) return;
+    rCol?.style.removeProperty('--layout-residual-width');
+    lCol?.style.removeProperty('--layout-residual-width');
+    if (!rCol || !lCol) {
+        block.setAttribute('data-layout-balance-status', 'skipped');
+        block.setAttribute('data-layout-balance-skip-reason', 'missing-column');
+        block.setAttribute('data-layout-balance-candidates', '0');
+        block.setAttribute('data-layout-balance-items', '0');
+        return;
+    }
     const allChildren = [...Array.from(rCol.children), ...Array.from(lCol.children)];
-    if (allChildren.length === 0) return;
+    if (allChildren.length === 0) {
+        block.setAttribute('data-layout-balance-status', 'skipped');
+        block.setAttribute('data-layout-balance-skip-reason', 'empty-block');
+        block.setAttribute('data-layout-balance-candidates', '0');
+        block.setAttribute('data-layout-balance-items', '0');
+        block.setAttribute('data-layout-balance-right', String(rCol.scrollHeight));
+        block.setAttribute('data-layout-balance-left', String(lCol.scrollHeight));
+        return;
+    }
 
     // ---- 1. איחוד חלקי פסקאות רצופים של אותו טוקן ----
     const mergedItems = [];
@@ -1398,11 +1644,225 @@ function balanceColumns(block, colWidth, styleObj, snapshot, availableHeight = I
                 if (prevIsHeading && l < 2) continue;                        // כותרת + שורה אחת בלבד
                 cands.push({ i, l });
             }
-            cands.push({ i: i + 1, l: 0 }); // הטור הימני מסתיים בסוף פסקה שלמה (לא בכותרת)
+            // A terminal candidate that places every item in the right column and nothing
+            // in the left is not a valid two-column split. If the paragraph is the final
+            // item, omit that candidate; the no-candidate path below preserves the existing
+            // DOM and records an explicit structural fallback instead of claiming success.
+            if (i + 1 < items.length) {
+                cands.push({ i: i + 1, l: 0 }); // סוף פסקה; נותר תוכן לטור השמאלי
+            }
         }
     }
     if (cands.length === 0) {
-        finalizeNotePositions([], 0);
+        block.setAttribute('data-layout-balance-status', 'skipped');
+        block.setAttribute('data-layout-balance-skip-reason', 'no-legal-two-column-split');
+        block.setAttribute('data-layout-balance-fallback', 'preserve-existing-flow-no-legal-split');
+        block.setAttribute('data-layout-balance-candidates', '0');
+        block.setAttribute('data-layout-balance-items', String(items.length));
+        block.setAttribute('data-layout-balance-fits', 'false');
+        block.setAttribute('data-layout-balance-valid', 'false');
+        block.setAttribute('data-layout-balance-right', String(rCol.scrollHeight));
+        block.setAttribute('data-layout-balance-left', String(lCol.scrollHeight));
+        block.setAttribute('data-layout-balance-over', String(Math.max(rCol.scrollHeight, lCol.scrollHeight)));
+        block.setAttribute('data-layout-balance-diff', String(rCol.scrollHeight - lCol.scrollHeight));
+
+        // A short, already-rendered terminal fragment cannot always be legally split
+        // across two columns. Promote only a single visible paragraph fragment to the
+        // full text width; never widen a multi-item block or reconstruct its source text.
+        const rightOnlyParagraph = rCol.children.length === 1 &&
+            rCol.firstElementChild?.tagName === 'P' && lCol.children.length === 0;
+        const leftOnlyParagraph = lCol.children.length === 1 &&
+            lCol.firstElementChild?.tagName === 'P' && rCol.children.length === 0;
+        const residualParagraph = rightOnlyParagraph ? rCol.firstElementChild
+            : (leftOnlyParagraph ? lCol.firstElementChild : null);
+        const residualText = residualParagraph?.textContent?.replace(/\s+/g, ' ').trim() || '';
+        const residualHasFirstWordWindow = residualParagraph?.getAttribute('data-is-cont') !== 'true';
+        const residualWillParenWrap = willParenWrapTokenId(residualParagraph?.getAttribute('data-token-id'));
+        const residualLinesAtWidth = width => residualText
+            ? getLinesFromParagraph(residualText, width, styleObj, residualHasFirstWordWindow, false,
+                residualWillParenWrap).lines.length
+            : Infinity;
+        const residualLines = residualLinesAtWidth(colWidth);
+        const isShortTerminalResidual = items.length === 1 && items[0].type === 'p' &&
+            !!residualParagraph && residualLines > 0 && residualLines <= (rules.minFirst + rules.minLast - 1);
+
+        if (isShortTerminalResidual) {
+            const side = rightOnlyParagraph ? 'right' : 'left';
+            const beforeHeight = Math.max(rCol.scrollHeight, lCol.scrollHeight);
+            const activeColumn = side === 'right' ? rCol : lCol;
+            block.setAttribute('data-layout-balance-fallback', 'full-width-terminal-residual');
+            block.setAttribute('data-layout-balance-fallback-side', side);
+            block.classList.add('layout-full-width-terminal-residual');
+
+            // Validate widow/orphan constraints against the actual DOM after reflow,
+            // not only the text measurer: p-cut nodes can contain inline markup whose
+            // browser wrapping differs from the plain-text estimate.
+            if (residualParagraph.classList.contains('p-cut')) {
+                const minRenderedLines = Math.max(2, rules.minLast || 1);
+                const fullWidth = activeColumn.getBoundingClientRect().width;
+                const measureRenderedLines = () => {
+                    const paragraphStyle = window.getComputedStyle(residualParagraph);
+                    const rect = residualParagraph.getBoundingClientRect();
+                    const lineHeight = parseFloat(paragraphStyle.lineHeight || '');
+                    if (Number.isFinite(lineHeight) && lineHeight > 0) {
+                        return Math.max(1, Math.round(rect.height / lineHeight));
+                    }
+                    // Fallback for 'normal' line-height: use the existing line measurer
+                    // only when browser metrics cannot yield a reliable integer count.
+                    return residualLinesAtWidth(activeColumn.getBoundingClientRect().width);
+                };
+                let low = Math.max(1, Math.floor(colWidth));
+                let high = Math.max(low, Math.floor(fullWidth));
+                let chosenWidth = null;
+
+                activeColumn.style.setProperty('--layout-residual-width', low + 'px');
+                if (measureRenderedLines() >= minRenderedLines) {
+                    while (low <= high) {
+                        const mid = Math.floor((low + high) / 2);
+                        activeColumn.style.setProperty('--layout-residual-width', mid + 'px');
+                        if (measureRenderedLines() >= minRenderedLines) {
+                            chosenWidth = mid;
+                            low = mid + 1;
+                        } else {
+                            high = mid - 1;
+                        }
+                    }
+                }
+
+                if (chosenWidth === null) {
+                    activeColumn.style.removeProperty('--layout-residual-width');
+                    block.classList.remove('layout-full-width-terminal-residual');
+                    block.removeAttribute('data-layout-balance-fallback-side');
+                    block.removeAttribute('data-layout-balance-fallback-width');
+                    block.setAttribute('data-layout-balance-fallback', 'preserve-existing-flow-no-legal-split');
+                    return;
+                }
+
+                activeColumn.style.setProperty('--layout-residual-width', chosenWidth + 'px');
+                block.setAttribute('data-layout-balance-fallback-width', String(chosenWidth));
+
+                // Widow/orphan line count alone is insufficient: a legal two-line p-cut
+                // can still end in a one-word line after widening (e.g. a 469px measure
+                // whose final line is only 42px). Measure the actual inline fragments,
+                // then seek the widest narrower measure that removes that sparse line
+                // without increasing the pre-fallback column height.
+                const measureRenderedLineMetrics = () => {
+                    const range = document.createRange();
+                    const walker = document.createTreeWalker(residualParagraph, NodeFilter.SHOW_TEXT);
+                    const fragments = [];
+                    let textNode;
+                    while ((textNode = walker.nextNode())) {
+                        range.selectNodeContents(textNode);
+                        for (const rect of Array.from(range.getClientRects())) {
+                            if (rect.width <= 0 || rect.height <= 0) continue;
+                            fragments.push({
+                                left: rect.left, right: rect.right,
+                                top: rect.top, bottom: rect.bottom,
+                                center: (rect.top + rect.bottom) / 2
+                            });
+                        }
+                    }
+                    range.detach();
+                    fragments.sort((a, b) => a.center - b.center || a.left - b.left);
+                    const lines = [];
+                    for (const fragment of fragments) {
+                        let match = null;
+                        let bestDistance = Infinity;
+                        for (const line of lines) {
+                            const lineHeight = line.bottom - line.top;
+                            const fragmentHeight = fragment.bottom - fragment.top;
+                            const tolerance = Math.max(9, Math.min(11, Math.max(lineHeight, fragmentHeight) * 0.45));
+                            const distance = Math.abs(line.center - fragment.center);
+                            if (distance <= tolerance && distance < bestDistance) {
+                                match = line;
+                                bestDistance = distance;
+                            }
+                        }
+                        if (!match) {
+                            lines.push({
+                                left: fragment.left, right: fragment.right,
+                                top: fragment.top, bottom: fragment.bottom,
+                                center: fragment.center
+                            });
+                        } else {
+                            match.left = Math.min(match.left, fragment.left);
+                            match.right = Math.max(match.right, fragment.right);
+                            match.top = Math.min(match.top, fragment.top);
+                            match.bottom = Math.max(match.bottom, fragment.bottom);
+                            match.center = (match.top + match.bottom) / 2;
+                        }
+                    }
+                    return lines.sort((a, b) => a.top - b.top)
+                        .map(line => ({ width: line.right - line.left, top: line.top, bottom: line.bottom }));
+                };
+                const lastLineContainsParenthetical = line => {
+                    if (!line) return false;
+                    const lineCenter = (line.top + line.bottom) / 2;
+                    for (const span of residualParagraph.querySelectorAll('.paren-text')) {
+                        for (const rect of Array.from(span.getClientRects())) {
+                            const center = (rect.top + rect.bottom) / 2;
+                            if (Math.abs(center - lineCenter) < 8) return true;
+                        }
+                    }
+                    return false;
+                };
+                const hasSparseLastLine = metrics => {
+                    if (!metrics || metrics.length < 2) return false;
+                    const first = metrics[0];
+                    const last = metrics[metrics.length - 1];
+                    return first.width > 0 && last.width < first.width * 0.5 &&
+                        !lastLineContainsParenthetical(last);
+                };
+
+                let renderedMetrics = measureRenderedLineMetrics();
+                let sparseLineStatus = 'not-needed';
+                if (hasSparseLastLine(renderedMetrics)) {
+                    sparseLineStatus = 'unresolved';
+                    const initialWidth = chosenWidth;
+                    for (let width = initialWidth - 1; width >= Math.max(1, Math.floor(colWidth)); width -= 1) {
+                        activeColumn.style.setProperty('--layout-residual-width', width + 'px');
+                        const candidateMetrics = measureRenderedLineMetrics();
+                        const candidateHeight = Math.max(rCol.scrollHeight, lCol.scrollHeight);
+                        if (candidateMetrics.length >= minRenderedLines &&
+                            !hasSparseLastLine(candidateMetrics) &&
+                            candidateHeight <= beforeHeight + 0.5 &&
+                            measureRenderedLines() >= minRenderedLines) {
+                            chosenWidth = width;
+                            renderedMetrics = candidateMetrics;
+                            sparseLineStatus = 'corrected';
+                            break;
+                        }
+                    }
+                    // If no narrower measure satisfies both density and height constraints,
+                    // keep the widow-safe measure and expose the unresolved sparse line.
+                    activeColumn.style.setProperty('--layout-residual-width', chosenWidth + 'px');
+                }
+
+                block.setAttribute('data-layout-balance-fallback-width', String(chosenWidth));
+                block.setAttribute('data-layout-balance-fallback-sparse-line', sparseLineStatus);
+                if (measureRenderedLines() < minRenderedLines ||
+                    measureRenderedLineMetrics().length < minRenderedLines) {
+                    // Guard against non-monotone font/layout metrics or a measurement discrepancy at the final selected width.
+                    activeColumn.style.removeProperty('--layout-residual-width');
+                    block.classList.remove('layout-full-width-terminal-residual');
+                    block.removeAttribute('data-layout-balance-fallback-side');
+                    block.removeAttribute('data-layout-balance-fallback-width');
+                    block.removeAttribute('data-layout-balance-fallback-sparse-line');
+                    block.setAttribute('data-layout-balance-fallback', 'preserve-existing-flow-no-legal-split');
+                    return;
+                }
+            }
+
+            // Recompute side-note positions against the new width/height geometry.
+            repositionBlockNotes(block, activeColumn.scrollHeight);
+            block.setAttribute('data-layout-balance-fallback-height-before', String(beforeHeight));
+            block.setAttribute('data-layout-balance-fallback-height-after',
+                String(Math.max(rCol.scrollHeight, lCol.scrollHeight)));
+        } else {
+            // Preserve the original flow for non-terminal/non-single-item cases.
+            // Do not call finalizeNotePositions([], 0): there is no reconstructed note list.
+            block.setAttribute('data-layout-balance-fallback', 'preserve-existing-flow-no-legal-split');
+        }
         return;
     }
 
@@ -1429,57 +1889,130 @@ function balanceColumns(block, colWidth, styleObj, snapshot, availableHeight = I
         rCol.innerHTML = '';
         lCol.innerHTML = '';
         for (let i = 0; i < c.i; i++) renderSingleItemFast(rCol, items[i]);
+        let valid = true;
+        let rightPartLines = null, leftPartLines = null;
         if (c.l > 0) {
             const item = items[c.i];
+            const rightText = item.lines.slice(0, c.l).join(' ');
+            const leftText = item.lines.slice(c.l).join(' ');
+            const _insideParenR = isInsideParenTokenId(item.id);
+            const _willWrap = willParenWrapTokenId(item.id);
+
+            // Match the final renderer's decision: first measure the actual chunk, then
+            // decide whether it is genuinely multi-line before applying a first-word window.
+            // Forcing a window just because the source split had l>=2 can manufacture a
+            // second line during measurement and then collapse to one line in the final DOM.
+            const rightInfo = getLinesFromParagraph(rightText, colWidth, styleObj, !item.isCont, false, _willWrap);
+            const leftInfo = getLinesFromParagraph(leftText, colWidth, styleObj, false, !!(item.endNote && !item.cut), _willWrap);
+            rightPartLines = rightInfo.lines.length;
+            leftPartLines = leftInfo.lines.length;
+            valid = rightPartLines >= rules.minFirst && leftPartLines >= rules.minLast;
+
             const pRight = document.createElement('p');
             pRight.className = 'p-cut';
-            const _insideParenR = isInsideParenTokenId(item.id);
-            pRight.innerHTML = createDropWord(item.lines.slice(0, c.l).join(' '), item.isCont, false, c.l, _insideParenR);
+            pRight.innerHTML = createDropWord(rightText, item.isCont, rightPartLines <= 1, rightPartLines, _insideParenR);
             applyDelimiterStyles(pRight, 'body', getBodySizePt(), true);
             rCol.appendChild(pRight);
 
             const pLeft = document.createElement('p');
             pLeft.className = item.cut ? 'p-cut' : 'p-end';
-            // isContinuation=true for left part, but insideParen is the same
-            pLeft.innerHTML = createDropWord(item.lines.slice(c.l).join(' '), true, false, item.lines.length - c.l, _insideParenR);
+            // The left chunk is always a continuation, so it receives no first-word window.
+            pLeft.innerHTML = createDropWord(leftText, true, leftPartLines <= 1, leftPartLines, _insideParenR);
             applyDelimiterStyles(pLeft, 'body', getBodySizePt(), true);
-            if (item.endNote && !item.cut) pLeft.appendChild(createDryEndNoteMarker());   // סימון הערת הסיום שיוצמד לסוף הפסקה
+            if (item.endNote && !item.cut) pLeft.appendChild(createDryEndNoteMarker());
             lCol.appendChild(pLeft);
         }
         for (let i = c.l > 0 ? c.i + 1 : c.i; i < items.length; i++) renderSingleItemFast(lCol, items[i]);
         const rH = rCol.scrollHeight, lH = lCol.scrollHeight;
         const diff = rH - lH;
-        const res = { k, rH, lH, diff, abs: Math.abs(diff), fits: Math.max(rH, lH) <= availableHeight, over: Math.max(rH, lH) };
+        const res = { k, rH, lH, diff, abs: Math.abs(diff), fits: Math.max(rH, lH) <= availableHeight, over: Math.max(rH, lH), valid, rightPartLines, leftPartLines };
         memo.set(k, res);
         return res;
     }
     function better(a, b) {
+        // Hard page-fit constraint first: never prefer an overflowing split when any
+        // candidate fits. Among candidates with equal fit status, preserve widow/orphan
+        // legality; if every candidate overflows, minimize overflow before imbalance.
         if (a.fits !== b.fits) return a.fits;
-        if (!a.fits) return a.over < b.over; // אף אחד לא נכנס: הפחות גולש
+        if (a.valid !== b.valid) return a.valid;
+        if (!a.fits && a.over !== b.over) return a.over < b.over;
         if (a.abs !== b.abs) return a.abs < b.abs;
-        return a.diff >= 0 && b.diff < 0; // שוויון: עדיפות לטור ימין גבוה יותר
+        const aRightTaller = a.diff >= 0, bRightTaller = b.diff >= 0;
+        if (aRightTaller !== bRightTaller) return aRightTaller;
+        return a.k < b.k;
     }
 
-    // חיפוש בינארי של נקודת החצייה (R-L הופך מחיובי לשלילי) ובדיקת סביבתה
+    // Exact deterministic search over every legal split candidate.
+    // The candidate set is finite; binary-searching only near the crossing can miss
+    // the true optimum when paragraph/heading margins and actual rendered line counts
+    // make the height difference discontinuous.
     const m = cands.length;
-    let lo = 0, hi = m - 1, cross = m - 1;
-    while (lo <= hi) {
-        const mid = (lo + hi) >> 1;
-        if (evalCand(mid).diff >= 0) { cross = mid; hi = mid - 1; } else lo = mid + 1;
-    }
     let best = null;
-    const consider = (k) => {
-        if (k < 0 || k >= m) return;
+    const evaluatedCandidates = [];
+    for (let k = 0; k < m; k++) {
         const e = evalCand(k);
+        evaluatedCandidates.push(e);
         if (!best || better(e, best)) best = e;
-    };
-    for (let k = cross - 3; k <= cross + 3; k++) consider(k);
-    // אם שום מועמד בסביבה לא נכנס בגובה הפנוי - מרחיבים החוצה עד שנמצא כזה
-    for (let d = 4; d <= 80 && !best.fits && (cross - d >= 0 || cross + d < m); d++) {
-        consider(cross - d);
-        consider(cross + d);
     }
     const bestSplit = cands[best.k];
+    const selectionScore = [
+        best.fits ? 0 : 1,
+        best.valid ? 0 : 1,
+        best.fits ? 0 : best.over,
+        best.abs,
+        best.diff >= 0 ? 0 : 1,
+        best.k
+    ];
+
+    // Full deterministic candidate ledger: preserve every evaluated alternative,
+    // not only the winner. This is diagnostic metadata only; it does not affect
+    // candidate evaluation, ordering, scoring, or selection.
+    const candidateTable = evaluatedCandidates.map(e => ({
+        k: e.k,
+        splitItemIndex: cands[e.k]?.i ?? null,
+        splitLineCount: cands[e.k]?.l ?? null,
+        rightHeight: e.rH,
+        leftHeight: e.lH,
+        signedDiff: e.diff,
+        absoluteDiff: e.abs,
+        fits: e.fits,
+        valid: e.valid,
+        overflow: e.over,
+        rightPartLines: e.rightPartLines ?? null,
+        leftPartLines: e.leftPartLines ?? null,
+        score: [
+            e.fits ? 0 : 1,
+            e.valid ? 0 : 1,
+            e.fits ? 0 : e.over,
+            e.abs,
+            e.diff >= 0 ? 0 : 1,
+            e.k
+        ]
+    }));
+    block.setAttribute('data-layout-balance-candidate-table', JSON.stringify(candidateTable));
+
+    // Keep the selected candidate itself inspectable, not just its measured heights.
+    // The tuple mirrors better()'s exact lexicographic priority order.
+    block.setAttribute('data-layout-balance-selection-policy', 'lexicographic-v1');
+    block.setAttribute('data-layout-balance-selected-candidate', String(best.k));
+    block.setAttribute('data-layout-balance-split-item-index', String(bestSplit.i));
+    block.setAttribute('data-layout-balance-split-line-count', String(bestSplit.l));
+    block.setAttribute('data-layout-balance-selection-score', JSON.stringify(selectionScore));
+
+    // Keep deterministic, inspectable metrics for the geometry audit.
+    block.setAttribute('data-layout-balance-status', 'evaluated');
+    block.setAttribute('data-layout-balance-skip-reason', '');
+    block.setAttribute('data-layout-balance-available', String(availableHeight));
+    block.setAttribute('data-layout-balance-candidates', String(cands.length));
+    block.setAttribute('data-layout-balance-items', String(items.length));
+    block.setAttribute('data-layout-balance-fits', String(best.fits));
+    block.setAttribute('data-layout-balance-valid', String(best.valid));
+    block.setAttribute('data-layout-balance-right-part-lines', String(best.rightPartLines ?? ''));
+    block.setAttribute('data-layout-balance-left-part-lines', String(best.leftPartLines ?? ''));
+    block.setAttribute('data-layout-balance-over', String(best.over));
+    block.setAttribute('data-layout-balance-right', String(best.rH));
+    block.setAttribute('data-layout-balance-left', String(best.lH));
+    block.setAttribute('data-layout-balance-diff', String(best.diff));
 
     // ---- 4. רינדור סופי ----
     rCol.innerHTML = '';
@@ -1563,12 +2096,101 @@ function balanceColumns(block, colWidth, styleObj, snapshot, availableHeight = I
     }
 
     // ---- 5. יישור עדין של הבסיס התחתון ----
-    const finalDiff = rCol.scrollHeight - lCol.scrollHeight;
-    if (finalDiff > 0.5) justifyColumnVertically(lCol, rCol.scrollHeight, styleObj, BALANCE_FINAL_JUSTIFY_MAX);
-    else if (finalDiff < -0.5) justifyColumnVertically(rCol, lCol.scrollHeight, styleObj, BALANCE_FINAL_JUSTIFY_MAX);
+    // The selected split may fit exactly; a final line-height justification can still
+    // increase rendered paragraph/outer-box height. Snapshot attributes and roll back
+    // that cosmetic adjustment if it violates the hard fit constraint.
+    const beforeFinalJustify = Array.from(block.querySelectorAll('*')).map(el =>
+        [el, Array.from(el.attributes).map(attr => [attr.name, attr.value])]);
+    const beforeFinalRightHeight = rCol.scrollHeight;
+    const beforeFinalLeftHeight = lCol.scrollHeight;
+    const beforeFinalOuterHeight = block.getBoundingClientRect().height;
+    const beforeFinalRightCapacity = getJustifyCapacityAudit(rCol);
+    const beforeFinalLeftCapacity = getJustifyCapacityAudit(lCol);
+    const finalDiff = beforeFinalRightHeight - beforeFinalLeftHeight;
+    let targetCol = null, targetHeight = null, targetSide = 'none';
+    if (finalDiff > 0.5) {
+        targetCol = lCol;
+        targetHeight = beforeFinalRightHeight;
+        targetSide = 'left';
+        justifyColumnVertically(lCol, targetHeight, styleObj, BALANCE_FINAL_JUSTIFY_MAX);
+    } else if (finalDiff < -0.5) {
+        targetCol = rCol;
+        targetHeight = beforeFinalLeftHeight;
+        targetSide = 'right';
+        justifyColumnVertically(rCol, targetHeight, styleObj, BALANCE_FINAL_JUSTIFY_MAX);
+    }
 
-    finalizeNotePositions(finalNotes, Math.max(rCol.scrollHeight, lCol.scrollHeight));
-    return { rH: rCol.scrollHeight, lH: lCol.scrollHeight, fits: Math.max(rCol.scrollHeight, lCol.scrollHeight) <= availableHeight };
+    // Correct a local final-justify overshoot before accepting the cosmetic adjustment.
+    // The global pass already does this; without the same guard here, a target gap of 14px
+    // can turn into a 7px opposite-side gap when padding/line-height adjustment overshoots.
+    const overshootBeforeShrink = targetCol ? targetCol.scrollHeight - targetHeight : null;
+    if (targetCol && overshootBeforeShrink > 0.5) {
+        shrinkColumnVertically(targetCol, targetHeight, styleObj, BALANCE_FINAL_JUSTIFY_MAX);
+    }
+    const overshootAfterShrink = targetCol ? targetCol.scrollHeight - targetHeight : null;
+    const attemptedRightHeight = rCol.scrollHeight;
+    const attemptedLeftHeight = lCol.scrollHeight;
+    const attemptedOuterHeight = block.getBoundingClientRect().height;
+    const postJustifyInner = Math.max(attemptedRightHeight, attemptedLeftHeight);
+    const justifyOverflows = postJustifyInner > availableHeight + 0.5 || attemptedOuterHeight > availableHeight + 0.5;
+    const attemptedDiff = attemptedRightHeight - attemptedLeftHeight;
+    const balanceWorsened = Math.abs(attemptedDiff) > Math.abs(finalDiff) + 0.5;
+    const rollbackReason = best.fits && justifyOverflows
+        ? 'final-justify-exceeded-available-height'
+        : balanceWorsened
+            ? 'final-justify-worsened-balance'
+            : 'none';
+
+    block.setAttribute('data-layout-final-justify-capacity-before', JSON.stringify({
+        right: beforeFinalRightCapacity,
+        left: beforeFinalLeftCapacity
+    }));
+    block.setAttribute('data-layout-final-justify-capacity-after', JSON.stringify({
+        right: getJustifyCapacityAudit(rCol),
+        left: getJustifyCapacityAudit(lCol)
+    }));
+    block.setAttribute('data-layout-final-justify-target-side', targetSide);
+    block.setAttribute('data-layout-final-justify-target-height', targetHeight === null ? '' : String(targetHeight));
+    block.setAttribute('data-layout-final-justify-before-right', String(beforeFinalRightHeight));
+    block.setAttribute('data-layout-final-justify-before-left', String(beforeFinalLeftHeight));
+    block.setAttribute('data-layout-final-justify-before-outer', String(beforeFinalOuterHeight));
+    block.setAttribute('data-layout-final-justify-attempt-right', String(attemptedRightHeight));
+    block.setAttribute('data-layout-final-justify-attempt-left', String(attemptedLeftHeight));
+    block.setAttribute('data-layout-final-justify-attempt-outer', String(attemptedOuterHeight));
+    block.setAttribute('data-layout-final-justify-balance-before-diff', String(finalDiff));
+    block.setAttribute('data-layout-final-justify-balance-attempt-diff', String(attemptedDiff));
+    block.setAttribute('data-layout-final-justify-overshoot-before-shrink',
+        overshootBeforeShrink === null ? 'none' : String(overshootBeforeShrink));
+    block.setAttribute('data-layout-final-justify-overshoot-after-shrink',
+        overshootAfterShrink === null ? 'none' : String(overshootAfterShrink));
+    block.setAttribute('data-layout-balance-final-justify-rollback-reason', rollbackReason);
+
+    if (rollbackReason !== 'none') {
+        for (const [el, attrs] of beforeFinalJustify) {
+            for (const attr of Array.from(el.attributes)) el.removeAttribute(attr.name);
+            for (const [name, value] of attrs) el.setAttribute(name, value);
+        }
+        block.setAttribute('data-layout-balance-final-justify-rolled-back', 'true');
+        repositionBlockNotes(block, Math.max(rCol.scrollHeight, lCol.scrollHeight));
+    } else {
+        block.setAttribute('data-layout-balance-final-justify-rolled-back', 'false');
+    }
+
+    // Separate the chosen-candidate metrics above from the geometry that actually
+    // survives final justification/rollback. Audit tools should use these final fields
+    // when answering "what is on the page?", and the balance fields when answering "why was this split selected?".
+    const finalRightHeight = rCol.scrollHeight;
+    const finalLeftHeight = lCol.scrollHeight;
+    const finalOuterHeight = block.getBoundingClientRect().height;
+    const finalFits = Math.max(finalRightHeight, finalLeftHeight, finalOuterHeight) <= availableHeight + 0.5;
+    block.setAttribute('data-layout-final-right-height', String(finalRightHeight));
+    block.setAttribute('data-layout-final-left-height', String(finalLeftHeight));
+    block.setAttribute('data-layout-final-diff', String(finalRightHeight - finalLeftHeight));
+    block.setAttribute('data-layout-final-inner-height', String(Math.max(finalRightHeight, finalLeftHeight)));
+    block.setAttribute('data-layout-final-outer-height', String(finalOuterHeight));
+    block.setAttribute('data-layout-final-fits', String(finalFits));
+    finalizeNotePositions(finalNotes, Math.max(finalRightHeight, finalLeftHeight));
+    return { rH: finalRightHeight, lH: finalLeftHeight, fits: finalFits };
 }
 
 /* ==========================================================================
@@ -1655,6 +2277,68 @@ function finalizeNotePositions(notesList, columnBoundaryHeight) {
     groups.forEach(entries => entries.forEach(e => {
         e.item.elem.style.top = e.top + 'px';
     }));
+}
+
+/* Final page-level safety pass for side notes.
+   Block-local positioning can leave a note taller than its short containing block.
+   Move only an actually overflowing note, and only when the candidate stays inside
+   the page body-flow and leaves a 4px gap from every other note on the same physical side.
+   If that cannot be proven, leave the note unchanged so the geometry audit still reports it. */
+function repositionOverflowingSideNotes(container) {
+    const SAFETY = 0.5;
+    const GAP = 4;
+    const pages = Array.from(container.querySelectorAll('.a4-page'));
+
+    pages.forEach(page => {
+        const flow = page.querySelector('.page-body-flow');
+        if (!flow) return;
+        const flowRect = flow.getBoundingClientRect();
+
+        ['right-margin', 'left-margin'].forEach(sideClass => {
+            const notes = Array.from(page.querySelectorAll('.margin-notes-column.' + sideClass + ' .side-note-anchor'))
+                .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+
+            notes.forEach(note => {
+                const r = note.getBoundingClientRect();
+                let delta = 0;
+                let correction = '';
+
+                if (r.bottom > flowRect.bottom + SAFETY) {
+                    delta = flowRect.bottom - SAFETY - r.bottom;
+                    correction = 'shift-up';
+                } else if (r.top < flowRect.top - SAFETY) {
+                    delta = flowRect.top + SAFETY - r.top;
+                    correction = 'shift-down';
+                }
+                if (!correction || Math.abs(delta) < 0.5) return;
+
+                const targetTop = r.top + delta;
+                const targetBottom = r.bottom + delta;
+                if (targetTop < flowRect.top + SAFETY - 0.1
+                    || targetBottom > flowRect.bottom - SAFETY + 0.1) {
+                    note.setAttribute('data-side-note-fit-correction', 'blocked-page-boundary');
+                    note.setAttribute('data-side-note-fit-shift-px', '0');
+                    return;
+                }
+
+                const collision = notes.some(other => {
+                    if (other === note) return false;
+                    const o = other.getBoundingClientRect();
+                    return targetTop < o.bottom + GAP && targetBottom > o.top - GAP;
+                });
+                if (collision) {
+                    note.setAttribute('data-side-note-fit-correction', 'blocked-collision');
+                    note.setAttribute('data-side-note-fit-shift-px', '0');
+                    return;
+                }
+
+                const currentTop = parseFloat(note.style.top);
+                note.style.top = ((Number.isFinite(currentTop) ? currentTop : 0) + delta) + 'px';
+                note.setAttribute('data-side-note-fit-correction', correction);
+                note.setAttribute('data-side-note-fit-shift-px', Math.abs(delta).toFixed(2));
+            });
+        });
+    });
 }
 
 /* ==========================================================================
@@ -2207,6 +2891,39 @@ function __findProbeHost() {
     return candidates[candidates.length - 1];
 }
 
+function __footnoteDomSignature(root, maxLines = 3) {
+    if (!root) return null;
+    const lines = Array.from(root.querySelectorAll('.note-line')).slice(0, maxLines);
+    return lines.map(line => {
+        const nodes = [line, ...Array.from(line.querySelectorAll('*'))].slice(0, 30);
+        return {
+            id: line.id || '',
+            textLength: line.textContent.length,
+            htmlLength: line.innerHTML.length,
+            html: line.innerHTML.slice(0, 1200),
+            nodes: nodes.map(node => {
+                const cs = getComputedStyle(node);
+                const rect = node.getBoundingClientRect();
+                return {
+                    tag: node.tagName,
+                    className: typeof node.className === 'string' ? node.className : '',
+                    style: node.getAttribute('style') || '',
+                    textLength: node.childElementCount ? null : (node.textContent || '').length,
+                    fontFamily: cs.fontFamily,
+                    fontSize: cs.fontSize,
+                    fontWeight: cs.fontWeight,
+                    lineHeight: cs.lineHeight,
+                    letterSpacing: cs.letterSpacing,
+                    wordSpacing: cs.wordSpacing,
+                    display: cs.display,
+                    width: Math.round(rect.width * 100) / 100,
+                    height: Math.round(rect.height * 100) / 100
+                };
+            })
+        };
+    });
+}
+
 function measureFootnoteAreaHeight(queue, opts) {
     opts = opts || {};
     if (!queue.length) return 0;
@@ -2231,6 +2948,9 @@ function measureFootnoteAreaHeight(queue, opts) {
             kind: 'cache-hit',
             queueSize: queue.length,
             firstNumber: queue[0].number,
+            numbers: queue.map(q => q.number).join(','),
+            uids: queue.map(q => q.uid).join(','),
+            textLens: queue.map(q => (q.text || '').length).join(','),
             probeWidth, fnColumns, noteBodySize, layoutMode,
             returned: cached,
             ctxKey
@@ -2267,6 +2987,25 @@ function measureFootnoteAreaHeight(queue, opts) {
     const marginBottom = parseFloat(cs.marginBottom) || 0;
     const blockScrollH = area.scrollHeight;
     const blockOffsetH = area.offsetHeight;
+    const noteBlock = area.querySelector('.note-block');
+    const noteBlockStyle = noteBlock ? getComputedStyle(noteBlock) : null;
+    const noteLine = noteBlock ? noteBlock.querySelector('.note-line') : null;
+    const noteLineStyle = noteLine ? getComputedStyle(noteLine) : null;
+    const areaWidth = area.getBoundingClientRect().width;
+    const noteBlockWidth = noteBlock ? noteBlock.getBoundingClientRect().width : null;
+    const noteBlockScrollH = noteBlock ? noteBlock.scrollHeight : null;
+    const noteBlockOffsetH = noteBlock ? noteBlock.offsetHeight : null;
+    const noteBlockClass = noteBlock ? noteBlock.className : null;
+    const noteBlockTextLength = noteBlock ? noteBlock.textContent.length : null;
+    const noteLineCount = noteBlock ? noteBlock.querySelectorAll('.note-line').length : 0;
+    const noteBlockFontSize = noteBlockStyle ? noteBlockStyle.fontSize : null;
+    const noteBlockLineHeight = noteBlockStyle ? noteBlockStyle.lineHeight : null;
+    const noteBlockFontFamily = noteBlockStyle ? noteBlockStyle.fontFamily : null;
+    const noteBlockColumnCount = noteBlockStyle ? noteBlockStyle.columnCount : null;
+    const noteBlockTextAlign = noteBlockStyle ? noteBlockStyle.textAlign : null;
+    const noteLineFontSize = noteLineStyle ? noteLineStyle.fontSize : null;
+    const noteLineLineHeight = noteLineStyle ? noteLineStyle.lineHeight : null;
+    const noteDomSignature = __footnoteDomSignature(noteBlock, 3);
     // נשתמש ב-max(scrollHeight, offsetHeight) — scrollHeight תופס גלישה, offsetHeight תופס border
     const innerH = Math.max(blockScrollH, blockOffsetH);
     const h = Math.ceil(innerH + marginTop + marginBottom);
@@ -2283,11 +3022,27 @@ function measureFootnoteAreaHeight(queue, opts) {
         queueSize: queue.length,
         firstNumber: queue[0].number,
         numbers: queue.map(q => q.number).join(','),
+        uids: queue.map(q => q.uid).join(','),
         textLens: queue.map(q => (q.text || '').length).join(','),
         probeWidth, fnColumns, noteBodySize, layoutMode,
         attachedToBody,
         scrollHeight: blockScrollH,
         offsetHeight: blockOffsetH,
+        areaWidth,
+        noteBlockWidth,
+        noteBlockScrollH,
+        noteBlockOffsetH,
+        noteBlockClass,
+        noteBlockTextLength,
+        noteLineCount,
+        noteBlockFontSize,
+        noteBlockLineHeight,
+        noteBlockFontFamily,
+        noteBlockColumnCount,
+        noteBlockTextAlign,
+        noteLineFontSize,
+        noteLineLineHeight,
+        noteDomSignature,
         marginTop, marginBottom,
         returned: h,
         ctxKey
@@ -2319,20 +3074,24 @@ function auditFnMeasurement() {
             return num ? num.textContent.trim() : '?';
         });
 
-        // חיפוש רשומת הלוג האחרונה שמתאימה ל-numbers.
-        // אנחנו משווים רק את החלק הראשון של מספר ההערה (לפני הנקודה/מפריד) כי הלוג
-        // שומר firstNumber בלי הנקודה, ואילו ה-DOM כולל את המפריד (note-num-separator).
-        const firstNumRaw = numbers[0] || '';
-        const firstNumCore = firstNumRaw.split(/[.\s,:;]/)[0].trim(); // "א." → "א"
-        const matching = window.__fnMeasureLog.filter(e =>
-            e.kind === 'fresh-measure' &&
-            e.queueSize === numbers.length &&
-            (
-                e.firstNumber === firstNumRaw ||
-                e.firstNumber === firstNumCore ||
-                (e.numbers && e.numbers.split(',')[0] === firstNumCore)
-            )
-        ).pop();
+        // Match the measurement to this exact queue by stable note UIDs.
+        // Note numbers repeat across pages, so queue length + first number is not unique.
+        const noteUids = Array.from(area.querySelectorAll('.note-line')).map(line =>
+            line.id && line.id.startsWith('note-') ? line.id.slice(5) : line.id || ''
+        );
+        const noteUidsKey = noteUids.join(',');
+        const matchingLogs = window.__fnMeasureLog.filter(e =>
+            (e.kind === 'fresh-measure' || e.kind === 'cache-hit') &&
+            typeof e.uids === 'string' &&
+            e.uids === noteUidsKey
+        );
+        // Prefer the original fresh measurement, which carries measured dimensions;
+        // a later cache-hit record only contains the returned height.
+        const matching = matchingLogs.filter(e => e.kind === 'fresh-measure').pop() || matchingLogs.pop();
+        const realNoteBlock = area.querySelector('.note-block');
+        const realNoteBlockStyle = realNoteBlock ? getComputedStyle(realNoteBlock) : null;
+        const realNoteLine = realNoteBlock ? realNoteBlock.querySelector('.note-line') : null;
+        const realNoteLineStyle = realNoteLine ? getComputedStyle(realNoteLine) : null;
 
         results.push({
             pageIdx: pIdx,
@@ -2343,7 +3102,39 @@ function auditFnMeasurement() {
             measuredOffsetH: matching ? matching.offsetHeight : null,
             measuredMarginTop: matching ? matching.marginTop : null,
             measuredMarginBottom: matching ? matching.marginBottom : null,
-            measuredAttachedToBody: matching ? matching.attachedToBody : null,
+            measuredAttachedToBody: matching ? (matching.attachedToBody ?? null) : null,
+            measuredKind: matching ? matching.kind : null,
+            measuredProbeWidth: matching ? (matching.probeWidth ?? null) : null,
+            measuredAreaWidth: matching ? (matching.areaWidth ?? null) : null,
+            measuredNoteBlockWidth: matching ? (matching.noteBlockWidth ?? null) : null,
+            measuredNoteBlockScrollH: matching ? (matching.noteBlockScrollH ?? null) : null,
+            measuredNoteBlockOffsetH: matching ? (matching.noteBlockOffsetH ?? null) : null,
+            measuredNoteBlockClass: matching ? (matching.noteBlockClass ?? null) : null,
+            measuredNoteBlockTextLength: matching ? (matching.noteBlockTextLength ?? null) : null,
+            measuredNoteLineCount: matching ? (matching.noteLineCount ?? null) : null,
+            measuredNoteBlockFontSize: matching ? (matching.noteBlockFontSize ?? null) : null,
+            measuredNoteBlockLineHeight: matching ? (matching.noteBlockLineHeight ?? null) : null,
+            measuredNoteBlockFontFamily: matching ? (matching.noteBlockFontFamily ?? null) : null,
+            measuredNoteBlockColumnCount: matching ? (matching.noteBlockColumnCount ?? null) : null,
+            measuredNoteBlockTextAlign: matching ? (matching.noteBlockTextAlign ?? null) : null,
+            measuredNoteLineFontSize: matching ? (matching.noteLineFontSize ?? null) : null,
+            measuredNoteLineLineHeight: matching ? (matching.noteLineLineHeight ?? null) : null,
+            measuredNoteDomSignature: matching ? (matching.noteDomSignature ?? null) : null,
+            realNoteDomSignature: __footnoteDomSignature(realNoteBlock, 3),
+            realNoteBlockWidth: realNoteBlock?.getBoundingClientRect().width ?? null,
+            realNoteBlockScrollH: realNoteBlock?.scrollHeight ?? null,
+            realNoteBlockOffsetH: realNoteBlock?.offsetHeight ?? null,
+            realNoteBlockClass: realNoteBlock?.className ?? null,
+            realNoteBlockTextLength: realNoteBlock ? realNoteBlock.textContent.length : null,
+            realNoteLineCount: realNoteBlock ? realNoteBlock.querySelectorAll('.note-line').length : null,
+            realNoteBlockFontSize: realNoteBlockStyle?.fontSize ?? null,
+            realNoteBlockLineHeight: realNoteBlockStyle?.lineHeight ?? null,
+            realNoteBlockFontFamily: realNoteBlockStyle?.fontFamily ?? null,
+            realNoteBlockColumnCount: realNoteBlockStyle?.columnCount ?? null,
+            realNoteBlockTextAlign: realNoteBlockStyle?.textAlign ?? null,
+            realNoteLineFontSize: realNoteLineStyle?.fontSize ?? null,
+            realNoteLineLineHeight: realNoteLineStyle?.lineHeight ?? null,
+            matchFound: !!matching,
             realH,
             realScroll,
             realOffset,
@@ -2390,15 +3181,44 @@ function flushFootnotesInto(pageEl) {
         return;
     }
 
+    // Record live geometry immediately before and after the real footnote area is inserted.
+    // This distinguishes a bad footnote-height estimate from flex redistribution / flow movement.
+    const queueCountBeforeFlush = footnoteQueueForPage.length;
+    const predictedFootnoteHeight = measureFootnoteAreaHeight(footnoteQueueForPage);
+    const wrapper = pageEl.querySelector('.page-content-wrapper');
+    const bodyFlowBefore = wrapper?.querySelector('.page-body-flow');
+    const beforeFlowRect = bodyFlowBefore?.getBoundingClientRect();
+    const beforeLastBlock = bodyFlowBefore?.lastElementChild;
+    const beforeLastBlockRect = beforeLastBlock?.getBoundingClientRect();
     const area = buildFootnoteAreaElement(footnoteQueueForPage);
 
-    const wrapper = pageEl.querySelector('.page-content-wrapper');
     const footer = pageEl.querySelector('.page-number-footer');
     if (wrapper && footer) {
         wrapper.insertBefore(area, footer);
     } else {
         pageEl.appendChild(area);
     }
+
+    // Force a synchronous layout read after insertion, then preserve the measured delta
+    // on the page so the long-document audit can report the exact source of live overflow.
+    const bodyFlowAfter = wrapper?.querySelector('.page-body-flow');
+    const afterFlowRect = bodyFlowAfter?.getBoundingClientRect();
+    const afterLastBlock = bodyFlowAfter?.lastElementChild;
+    const afterLastBlockRect = afterLastBlock?.getBoundingClientRect();
+    const setMetric = (name, value) => {
+        if (value !== null && value !== undefined && Number.isFinite(value)) {
+            pageEl.setAttribute(name, String(Math.round(value * 100) / 100));
+        }
+    };
+    pageEl.setAttribute('data-fn-reflow-queue-count', String(queueCountBeforeFlush));
+    setMetric('data-fn-reflow-predicted-height', predictedFootnoteHeight);
+    setMetric('data-fn-reflow-before-flow-height', beforeFlowRect?.height);
+    setMetric('data-fn-reflow-after-flow-height', afterFlowRect?.height);
+    setMetric('data-fn-reflow-flow-height-delta', beforeFlowRect && afterFlowRect ? afterFlowRect.height - beforeFlowRect.height : null);
+    setMetric('data-fn-reflow-before-last-block-height', beforeLastBlockRect?.height);
+    setMetric('data-fn-reflow-after-last-block-height', afterLastBlockRect?.height);
+    setMetric('data-fn-reflow-after-last-block-overflow', afterLastBlockRect && afterFlowRect ? afterLastBlockRect.bottom - afterFlowRect.bottom : null);
+    setMetric('data-fn-reflow-last-block-top-offset', afterLastBlockRect && afterFlowRect ? afterLastBlockRect.top - afterFlowRect.top : null);
 
     // [חדש] אחרי שהאזור חובר ל-DOM, מסמנים את השורה האחרונה של בלוק רציף
     // (אם יש שם 2+ הערות — מפעיל text-align-last: justify כדי שהן יתפרסו על כל הרוחב)
@@ -3407,8 +4227,26 @@ function typesetDocumentCore() {
         let secTokens = sec.tokens.slice();
         let tokenIndex = 0;
         let pendingWordTokens = null;
+        let previousPageProgressKey = null;
+        let previousProgressPageIndex = null;
+        let noProgressPageCount = 0;
 
         while (tokenIndex < secTokens.length || pendingWordTokens) {
+            const pendingProgressKey = pendingWordTokens
+                ? String(pendingWordTokens.token?.id || pendingWordTokens.token?.text || '') + '|' + (pendingWordTokens.remainingLines || []).join(' ')
+                : '';
+            const pageProgressKey = String(tokenIndex) + '|' + pendingProgressKey;
+            if (previousProgressPageIndex !== null && pageIndex > previousProgressPageIndex) {
+                if (pageProgressKey === previousPageProgressKey) noProgressPageCount++;
+                else noProgressPageCount = 0;
+                if (noProgressPageCount >= 2) {
+                    throw new Error('Layout infeasible without violating widow/orphan rules: no content progress across ' +
+                        noProgressPageCount + ' pages at tokenIndex=' + tokenIndex + ', pending=' + pendingProgressKey.slice(0, 120));
+                }
+            }
+            previousPageProgressKey = pageProgressKey;
+            previousProgressPageIndex = pageIndex;
+
             if (prevPageEl) flushFootnotesInto(prevPageEl);
             if (isFirstPage && h2Text && sec.hToken) ensureOddPageStart(sec.hToken.level);
 
@@ -3440,10 +4278,8 @@ function typesetDocumentCore() {
             }
 
             let totalFlowH = pageLayout.bodyFlow.clientHeight || 870;
-            let used = 0;
 
             if (isFirstPage && h2Text) {
-                const spacer = pageLayout.bodyFlow.querySelector('.h2-spacer');
                 const title = pageLayout.bodyFlow.querySelector('.title-level-2-standalone');
                 if (title) {
                     if (sec.hToken.customStyleId) {
@@ -3513,23 +4349,98 @@ function typesetDocumentCore() {
                     if (EngineInputs.el('h2-orn-fit-text')?.checked && (topOrnHTML || btmOrnHTML)) {
                         fitH2OrnamentsToText(pageLayout.bodyFlow, h2OrnScope, simanElem, title);
                     }
+
+                    // Independent H2-title ornaments are separate from the existing siman/title ornaments.
+                    const titleOrnMode = EngineInputs.el('h2-title-orn-mode')?.value || 'none';
+                    if (titleOrnMode === 'top_bottom') {
+                        const topStyle = EngineInputs.el('h2-title-ornament-top-style')?.value || 'none';
+                        const bottomStyle = EngineInputs.el('h2-title-ornament-bottom-style')?.value || 'none';
+                        const topHTML = topStyle !== 'none' ? getHeadingOrnamentHTML(topStyle, true, true) : '';
+                        const bottomHTML = bottomStyle !== 'none' ? getHeadingOrnamentHTML(bottomStyle, false, true) : '';
+                        let topWrap = null;
+                        let bottomWrap = null;
+                        if (topHTML) {
+                            topWrap = document.createElement('div');
+                            topWrap.className = 'h2-title-ornament-top';
+                            topWrap.innerHTML = topHTML;
+                            title.parentNode.insertBefore(topWrap, title);
+                        }
+                        if (bottomHTML) {
+                            bottomWrap = document.createElement('div');
+                            bottomWrap.className = 'h2-title-ornament-bottom';
+                            bottomWrap.innerHTML = bottomHTML;
+                            title.parentNode.insertBefore(bottomWrap, title.nextSibling);
+                        }
+                        if (EngineInputs.el('h2-orn-fit-text')?.checked) {
+                            const titleWidth = title.getBoundingClientRect().width;
+                            if (titleWidth > 0) {
+                                [topWrap, bottomWrap].filter(Boolean).forEach(wrap => {
+                                    const fitInner = wrap.querySelector('.fit-heading-text');
+                                    if (fitInner) {
+                                        fitInner.style.setProperty('width', titleWidth + 'px', 'important');
+                                        fitInner.style.setProperty('max-width', '90%', 'important');
+                                    }
+                                });
+                            }
+                        }
+                    } else if (titleOrnMode === 'side') {
+                        const rightStyle = EngineInputs.el('h2-title-ornament-r')?.value || 'none';
+                        const selectedLeftStyle = EngineInputs.el('h2-title-ornament-l')?.value || 'none';
+                        const leftStyle = selectedLeftStyle !== 'none' ? selectedLeftStyle : rightStyle;
+                        const parent = title.parentNode;
+                        const sideWrap = document.createElement('div');
+                        sideWrap.className = 'block-h2-title-side';
+                        parent.insertBefore(sideWrap, title);
+                        const appendSideOrnament = (styleKey, isLeft, className) => {
+                            if (!styleKey || styleKey === 'none') return;
+                            const ornament = document.createElement('span');
+                            ornament.className = className;
+                            ornament.innerHTML = renderSideOrnamentHTML(styleKey, isLeft, 'h2title');
+                            sideWrap.appendChild(ornament);
+                        };
+                        appendSideOrnament(rightStyle, false, 'h2-title-ornament-right');
+                        sideWrap.appendChild(title);
+                        appendSideOrnament(leftStyle, true, 'h2-title-ornament-left');
+                    }
                 }
 
-                if (spacer) used += layoutHeightOf(spacer);
-                const headerEls = pageLayout.bodyFlow.querySelectorAll('.h2-ornament-top, .h2-siman-badge, .title-level-2-standalone, .h2-ornament-bottom');
-                headerEls.forEach(el => {
-                    used += layoutHeightOf(el);
-                    const st = window.getComputedStyle(el);
-                    used += (parseFloat(st.marginTop) || 0) + (parseFloat(st.marginBottom) || 0);
-                });
             }
 
-            let remPageHeight = isFirstPage ? (totalFlowH - used) : totalFlowH;
+            // Measure remaining height from actual DOM coordinates. Summing element heights
+            // misses collapsed/flex margins and was allowing section-opening blocks to exceed
+            // the real body area by 100px or more.
+            const initialFlowTop = pageLayout.bodyFlow.getBoundingClientRect().top;
+            const initialFlowBottom = pageLayout.bodyFlow.getBoundingClientRect().bottom;
+            const initialLastChild = pageLayout.bodyFlow.lastElementChild;
+            let remPageHeight = Math.max(0, initialFlowBottom -
+                (initialLastChild ? initialLastChild.getBoundingClientRect().bottom : initialFlowTop));
             isFirstPage = false;
 
             const redoCheck = () => {
                 const reserve = getFootnotesReservedHeight();
-                if (!reserve || remPageHeight - reserve >= -0.5 || redoAttempts >= 2) return false;
+                const freeAfterReserve = remPageHeight - reserve;
+                const flowRect = pageLayout.bodyFlow.getBoundingClientRect();
+                const lastFlowChild = pageLayout.bodyFlow.lastElementChild;
+                const lastFlowRect = lastFlowChild?.getBoundingClientRect();
+                const retryLimitReached = redoAttempts >= 2;
+                const reason = !reserve ? 'no-reserve'
+                    : freeAfterReserve >= -0.5 ? 'reserve-fits'
+                    : retryLimitReached ? 'retry-limit'
+                    : 'retry-triggered';
+                const setRedoMetric = (name, value) => {
+                    if (value !== null && value !== undefined && Number.isFinite(value)) {
+                        pageLayout.page.setAttribute(name, String(Math.round(value * 100) / 100));
+                    }
+                };
+                pageLayout.page.setAttribute('data-layout-redo-reason', reason);
+                pageLayout.page.setAttribute('data-layout-redo-attempts', String(redoAttempts));
+                setRedoMetric('data-layout-redo-reserve', reserve);
+                setRedoMetric('data-layout-redo-rem-height', remPageHeight);
+                setRedoMetric('data-layout-redo-free-after-reserve', freeAfterReserve);
+                setRedoMetric('data-layout-redo-flow-height', flowRect.height);
+                setRedoMetric('data-layout-redo-last-child-height', lastFlowRect?.height);
+                setRedoMetric('data-layout-redo-last-child-overflow', lastFlowRect ? lastFlowRect.bottom - flowRect.bottom : null);
+                if (!reserve || freeAfterReserve >= -0.5 || retryLimitReached) return false;
                 if (pageLayout.page.parentNode) pageLayout.page.parentNode.removeChild(pageLayout.page);
                 tokenIndex = pageState.tokenIndex;
                 pendingWordTokens = pageState.pendingWordTokens;
@@ -3561,15 +4472,31 @@ function typesetDocumentCore() {
                 const flow = pageLayout.bodyFlow;
                 const lastEl = flow.lastElementChild;
                 if (!lastEl || !(lastEl.classList.contains('block-2col') || lastEl.classList.contains('block-single-col'))) return;
-                const flowBottom = flow.getBoundingClientRect().top + totalFlowH;
-                const free = (flowBottom - reservedNow()) - lastEl.getBoundingClientRect().bottom - 1;
-                stretchLastBlockToBottom(flow, free, styleObj, PAGE_STRETCH_MAX);
+                const flowBottom = flow.getBoundingClientRect().bottom;
+                const reservedHeight = reservedNow();
+                const free = (flowBottom - reservedHeight) - lastEl.getBoundingClientRect().bottom - 1;
+                recordLayoutGeometryStage(lastEl, 'before-page-stretch', flow, {
+                    freeSpace: Math.round(free * 1000) / 1000,
+                    reservedHeight: Math.round(reservedHeight * 1000) / 1000
+                });
+                const stretchApplied = stretchLastBlockToBottom(flow, free, styleObj, PAGE_STRETCH_MAX);
+                const finalEl = flow.lastElementChild;
+                if (finalEl?.classList?.contains('block-2col') || finalEl?.classList?.contains('block-single-col')) {
+                    recordLayoutGeometryStage(finalEl, 'after-page-stretch', flow, {
+                        freeSpace: Math.round(free * 1000) / 1000,
+                        reservedHeight: Math.round(reservedHeight * 1000) / 1000,
+                        stretchApplied
+                    });
+                }
             };
                         if (isH0) {
                 const singleBlock = document.createElement('div');
                 singleBlock.className = 'block-single-col';
                 singleBlock.innerHTML = `<div class="single-wide-col"></div>`;
                 pageLayout.bodyFlow.appendChild(singleBlock);
+                const h0FlowTop = pageLayout.bodyFlow.getBoundingClientRect().top;
+                const h0FlowBottom = pageLayout.bodyFlow.getBoundingClientRect().bottom;
+                remPageHeight = Math.max(0, h0FlowBottom - singleBlock.getBoundingClientRect().top);
                 const targetCol = singleBlock.querySelector('.single-wide-col');
                 let pageHasContent = false;
 
@@ -3644,7 +4571,15 @@ function typesetDocumentCore() {
                             (txt) => remPageHeight - reservedNow(txt));
 
                         // [תיקון] החלטת חיתוך אחת לכל הכללים: אין שורה בודדת בתחילת/סוף חיתוך, וכותרות לא נשארות לבדן
-                        const placeLines = resolveParagraphSplit(lines.length, bestFitLine, !pageHasContent);
+                        const placeLines = resolveParagraphSplit(lines.length, bestFitLine);
+                        // Preserve the split-time decision so the final DOM audit can detect
+                        // post-layout line-collapse that turns a legal 2-line chunk into a 1-line orphan.
+                        const splitRules = getSplitRules();
+                        pElem.setAttribute('data-layout-split-input-lines', String(lines.length));
+                        pElem.setAttribute('data-layout-split-fit-lines', String(bestFitLine));
+                        pElem.setAttribute('data-layout-split-placed-lines', String(placeLines));
+                        pElem.setAttribute('data-layout-split-min-first', String(splitRules.minFirst));
+                        pElem.setAttribute('data-layout-split-min-last', String(splitRules.minLast));
                         if (placeLines === 0) {
                             targetCol.removeChild(pElem);
                             tokenIndex -= rollbackTrailingHeadings(targetCol);
@@ -3660,6 +4595,7 @@ function typesetDocumentCore() {
                         pElem.setAttribute('data-raw-text', chunk);
                         // [חדש] העבר דגל insideParen ל-createDropWord (לדילוג על מילה ראשונה בתוך סוגריים)
                         const _insideParen = isInsideParenToken(currentTok);
+                        pElem.setAttribute('data-layout-split-inside-paren', String(_insideParen));
                         pElem.innerHTML = createDropWord(chunk, isContinuation, !hasWindow, lines.length, _insideParen);
                         applyDelimiterStyles(pElem, 'body', getBodySizePt(), false);
 
@@ -3758,20 +4694,29 @@ function typesetDocumentCore() {
                     /* [תיקון] כותרת רוחבית לא נשארת יתומה בתחתית העמוד: אחרי הצבתה חייב להישאר מקום לשתי שורות תוכן לפחות
                        (הלולאה הזו לא פותחת בלוק חדש כשנשארו 45px או פחות - ואז הכותרת הייתה נשארת אחרונה בעמוד בלי טקסט אחריה).
                        בעמוד שעוד אין בו תוכן גוף הכותרת מוצבת בכל מקרה (אחרת העמוד היה נשאר ריק לנצח). */
-                    const spanFree = remPageHeight - reservedNow();
+                    const flowTop = pageLayout.bodyFlow.getBoundingClientRect().top;
+                    const flowBottom = pageLayout.bodyFlow.getBoundingClientRect().bottom;
+                    const spanTop = spanBlock.getBoundingClientRect().top;
+                    const spanFree = Math.max(0, flowBottom - spanTop) - reservedNow();
                     if (spanHeight > spanFree || (pageBodyHasContent && spanFree - spanHeight <= 45)) {
                         pageLayout.bodyFlow.removeChild(spanBlock);
                         break;
                     }
 
                     headingPageMap[peekTok.id] = toGematria(pageIndex - 1);
-                    remPageHeight -= spanHeight;
+                    remPageHeight = Math.max(0, flowBottom - spanBlock.getBoundingClientRect().bottom);
                     tokenIndex++;
                     continue;
                 }
 
                 const block2Col = document.createElement('div');
                 block2Col.className = 'block-2col';
+                // Every block starts with an explicit routing state. A later call to
+                // balanceColumns replaces this with "balanceColumns"; bypasses must
+                // write a concrete reason rather than leave the decision unrecorded.
+                block2Col.setAttribute('data-layout-balance-status', 'not-requested');
+                block2Col.setAttribute('data-layout-balance-skip-reason', 'routing-pending');
+                block2Col.setAttribute('data-layout-balance-routing', 'pending');
                 block2Col.innerHTML = `
           <div class="margin-notes-column right-margin"></div>
           <div></div>
@@ -3782,6 +4727,15 @@ function typesetDocumentCore() {
           <div class="margin-notes-column left-margin"></div>
         `;
                 pageLayout.bodyFlow.appendChild(block2Col);
+                // Use the real start position of this block, including all preceding content
+                // and CSS gaps, as the available-height origin for paragraph fitting.
+                const blockFlowTop = pageLayout.bodyFlow.getBoundingClientRect().top;
+                const blockFlowBottom = pageLayout.bodyFlow.getBoundingClientRect().bottom;
+                const blockTop = block2Col.getBoundingClientRect().top;
+                remPageHeight = Math.max(0, blockFlowBottom - blockTop);
+                block2Col.setAttribute('data-layout-fill-remaining', String(remPageHeight));
+                block2Col.setAttribute('data-layout-fill-flow-height', String(totalFlowH));
+                block2Col.setAttribute('data-layout-fill-top-offset', String(blockTop - blockFlowTop));
                 pagePendingNotes = [];
 
                 const blockNoteSnapshot = {
@@ -3866,7 +4820,15 @@ function typesetDocumentCore() {
                                 (txt) => remPageHeight - reservedNow(txt));
 
                             // [תיקון] החלטת חיתוך אחת לכל הכללים: אין שורה בודדת בתחילת/סוף חיתוך, וכותרות לא נשארות לבדן
-                            const placeLines = resolveParagraphSplit(lines.length, bestFitLine, !pageHasContent && !pageBodyHasContent);
+                            const placeLines = resolveParagraphSplit(lines.length, bestFitLine);
+                        // Preserve the split-time decision so the final DOM audit can detect
+                        // post-layout line-collapse that turns a legal 2-line chunk into a 1-line orphan.
+                        const splitRules = getSplitRules();
+                        pElem.setAttribute('data-layout-split-input-lines', String(lines.length));
+                        pElem.setAttribute('data-layout-split-fit-lines', String(bestFitLine));
+                        pElem.setAttribute('data-layout-split-placed-lines', String(placeLines));
+                        pElem.setAttribute('data-layout-split-min-first', String(splitRules.minFirst));
+                        pElem.setAttribute('data-layout-split-min-last', String(splitRules.minLast));
                             if (placeLines === 0) {
                                 targetCol.removeChild(pElem);
                                 tokenIndex -= rollbackTrailingHeadings(targetCol);
@@ -3882,6 +4844,7 @@ function typesetDocumentCore() {
                             pElem.setAttribute('data-raw-text', chunk);
                             // [חדש] העבר דגל insideParen ל-createDropWord
                             const _insideParen = isInsideParenToken(currentTok);
+                        pElem.setAttribute('data-layout-split-inside-paren', String(_insideParen));
                             pElem.innerHTML = createDropWord(chunk, isContinuation, !hasWindow, lines.length, _insideParen);
                             applyDelimiterStyles(pElem, 'body', getBodySizePt(), false);
 
@@ -3940,7 +4903,14 @@ function typesetDocumentCore() {
                 }
 
                 // חישוב הגובה המותר האמיתי לשני הטורים (לאחר שכל הערות העמוד ידועות!)
-                const actualAvailH = remPageHeight - reservedNow();
+                const actualAvailH = Math.max(0, remPageHeight - reservedNow());
+                // scrollHeight omits some outer line-box/margin contributions. Use the rendered
+                // block box as a second hard-fit constraint, and reserve the measured excess
+                // when asking balanceColumns to choose a split.
+                const initialOuterBlockH = block2Col.getBoundingClientRect().height;
+                const initialInnerColumnsH = Math.max(rCol.scrollHeight, lCol.scrollHeight);
+                const outerBoxOverhead = Math.max(0, initialOuterBlockH - initialInnerColumnsH);
+                const balanceAvailH = Math.max(0, actualAvailH - outerBoxOverhead);
 
                 // 1. סיום פרק
                 if (tokenIndex >= secTokens.length && !pendingWordTokens) {
@@ -3949,10 +4919,14 @@ function typesetDocumentCore() {
                     // ורק כשהבלוק נכנס בגובה הפנוי - אחרת מאזנים כרגיל כדי לא לחרוג מהעמוד.
                     const keepChapterEndUnbalanced =
                         EngineInputs.el('balance-chapter-end')?.value === 'fill' &&
-                        Math.max(rCol.scrollHeight, lCol.scrollHeight) <= actualAvailH;
+                        Math.max(rCol.scrollHeight, lCol.scrollHeight) <= actualAvailH &&
+                        block2Col.getBoundingClientRect().height <= actualAvailH;
                     if (!keepChapterEndUnbalanced) {
-                        balanceColumns(block2Col, colWidth, styleObj, blockNoteSnapshot, actualAvailH);
+                        balanceColumns(block2Col, colWidth, styleObj, blockNoteSnapshot,
+                            block2Col.getBoundingClientRect().height > actualAvailH ? balanceAvailH : actualAvailH);
                     } else {
+                        block2Col.setAttribute('data-layout-balance-routing', 'chapter-end-fill-policy');
+                        block2Col.setAttribute('data-layout-balance-skip-reason', 'balance-disabled-by-chapter-end-fill-policy');
                         // בלי איזון: הערות הצד שנוצרו במילוי הרגיל עדיין לא מוקמו (balanceColumns מקים את שלו בעצמו, וה-break שלמטה מדלג על ההקמה הרגילה)
                         finalizeNotePositions(pagePendingNotes, Math.max(rCol.scrollHeight, lCol.scrollHeight));
                     }
@@ -3964,12 +4938,14 @@ function typesetDocumentCore() {
                         const divEl = divContainer.firstElementChild;
                         pageLayout.bodyFlow.appendChild(divEl);
                         // המפריד חייב להיכנס בגוף העמוד (מעל אזור הערות השוליים) - ראו fitSectionDividerToPage
-                        fitSectionDividerToPage(divEl, pageLayout.bodyFlow.getBoundingClientRect().top + totalFlowH - reservedNow());
+                        fitSectionDividerToPage(divEl, pageLayout.bodyFlow.getBoundingClientRect().bottom - reservedNow());
                     }
                     /* [תיקון] גם בבלוק האחרון של הפרק מנכים את גובהו מהנותר בעמוד: בלי זה בדיקת עתודת הערות השוליים (redoCheck)
                        ראתה את העמוד כאילו ריק, ולא זיהתה הערה מאוחרת בטור השמאלי שהגדילה את אזור ההערות אחרי שהטור הימני כבר מולא
                        (בהערות שוליים ב-2 טורים הטקסט חרג אל תוך אזור ההערות). כשהכול נכנס - אין שום שינוי. */
-                    remPageHeight -= Math.max(rCol.scrollHeight, lCol.scrollHeight);
+                    const lastBodyChild = pageLayout.bodyFlow.lastElementChild;
+                    remPageHeight = Math.max(0, pageLayout.bodyFlow.getBoundingClientRect().bottom -
+                        (lastBodyChild ? lastBodyChild.getBoundingClientRect().bottom : blockFlowTop));
                     break;
                 } else {
                     let nextPeekTok = pendingWordTokens ? pendingWordTokens.token : secTokens[tokenIndex];
@@ -3980,11 +4956,17 @@ function typesetDocumentCore() {
                         balanceColumns(block2Col, colWidth, styleObj, blockNoteSnapshot, actualAvailH);
                     } 
                     // 3. הטור הימני גלש לתוך שטח ההערה (כי ההערה הייתה בטור שמאל) או שיש פער משמעותי
-                    else if (rCol.scrollHeight > actualAvailH || Math.abs(rCol.scrollHeight - lCol.scrollHeight) > 60) {
-                        balanceColumns(block2Col, colWidth, styleObj, blockNoteSnapshot, actualAvailH);
+                    else if (Math.max(rCol.scrollHeight, lCol.scrollHeight) > actualAvailH ||
+                        block2Col.getBoundingClientRect().height > actualAvailH ||
+                        Math.abs(rCol.scrollHeight - lCol.scrollHeight) > 60) {
+                        balanceColumns(block2Col, colWidth, styleObj, blockNoteSnapshot,
+                            block2Col.getBoundingClientRect().height > actualAvailH ? balanceAvailH : actualAvailH);
                     } 
                     // 4. עמוד רגיל מאוזן שדורש רק יישור שורות עדין
                     else {
+                        block2Col.setAttribute('data-layout-balance-routing', 'light-justify');
+                        block2Col.setAttribute('data-layout-balance-light-before-right', String(rCol.scrollHeight));
+                        block2Col.setAttribute('data-layout-balance-light-before-left', String(lCol.scrollHeight));
                         let usedBlockH = Math.max(rCol.scrollHeight, lCol.scrollHeight);
                         let finalDiff = rCol.scrollHeight - lCol.scrollHeight;
                         if (usedBlockH <= remPageHeight) {
@@ -3993,11 +4975,62 @@ function typesetDocumentCore() {
                             } else if (finalDiff < -2 && Math.abs(finalDiff) <= 60) {
                                 justifyColumnVertically(rCol, lCol.scrollHeight, styleObj);
                             }
+
+                            // Light justification has a per-line growth cap. If it reaches
+                            // that cap and leaves a material residual imbalance, switch to
+                            // the deterministic split search instead of silently accepting
+                            // an unbalanced continuation block (for example, one paragraph
+                            // split into a 5-line right fragment and a max-stretched 3-line
+                            // left fragment). Keep small residuals on short blocks untouched.
+                            const residualDiff = rCol.scrollHeight - lCol.scrollHeight;
+                            block2Col.setAttribute('data-layout-balance-light-after-right', String(rCol.scrollHeight));
+                            block2Col.setAttribute('data-layout-balance-light-after-left', String(lCol.scrollHeight));
+                            block2Col.setAttribute('data-layout-balance-light-residual-diff', String(residualDiff));
+                            if (block2Col.getAttribute('data-layout-balance-called') !== 'true' &&
+                                Math.abs(residualDiff) > 8 && Math.abs(residualDiff) <= 60) {
+                                block2Col.setAttribute('data-layout-balance-light-fallback-reason', 'residual-above-8px');
+                                const residualOuter = block2Col.getBoundingClientRect().height;
+                                const residualInner = Math.max(rCol.scrollHeight, lCol.scrollHeight);
+                                const residualOverhead = Math.max(0, residualOuter - residualInner);
+                                balanceColumns(block2Col, colWidth, styleObj, blockNoteSnapshot,
+                                    Math.max(0, actualAvailH - residualOverhead));
+                            } else if (block2Col.getAttribute('data-layout-balance-called') !== 'true') {
+                                block2Col.setAttribute('data-layout-balance-skip-reason',
+                                    Math.abs(residualDiff) <= 8
+                                        ? 'light-justify-residual-within-8px-policy'
+                                        : 'light-justify-no-balance-fallback');
+                            }
                         }
                     }
                 }
 
-                remPageHeight -= Math.max(rCol.scrollHeight, lCol.scrollHeight);
+                // Hard postcondition after the ordinary-fill / light-justification branch:
+                // a small vertical-justification pass can increase line boxes after the
+                // pre-pass fit checks, so validate the *rendered outer box* once more.
+                // If it no longer fits, rerun the deterministic split search with the
+                // available height reduced by the measured outer-box overhead.
+                const postLayoutOuterHeight = block2Col.getBoundingClientRect().height;
+                const postLayoutInnerHeight = Math.max(rCol.scrollHeight, lCol.scrollHeight);
+                if (postLayoutOuterHeight > actualAvailH + 0.5 || postLayoutInnerHeight > actualAvailH + 0.5) {
+                    block2Col.setAttribute('data-layout-postfit-triggered', 'true');
+                    block2Col.setAttribute('data-layout-postfit-outer-overflow', String(Math.round((postLayoutOuterHeight - actualAvailH) * 100) / 100));
+                    block2Col.setAttribute('data-layout-postfit-inner-overflow', String(Math.round((postLayoutInnerHeight - actualAvailH) * 100) / 100));
+                    const postFitOverhead = Math.max(0, postLayoutOuterHeight - postLayoutInnerHeight);
+                    balanceColumns(block2Col, colWidth, styleObj, blockNoteSnapshot,
+                        Math.max(0, actualAvailH - postFitOverhead));
+                } else {
+                    block2Col.setAttribute('data-layout-postfit-triggered', 'false');
+                    block2Col.setAttribute('data-layout-postfit-outer-overflow', '0');
+                    block2Col.setAttribute('data-layout-postfit-inner-overflow', '0');
+                }
+                recordLayoutGeometryStage(block2Col, 'postfit', pageLayout.bodyFlow, {
+                    actualAvailableHeight: Math.round(actualAvailH * 1000) / 1000,
+                    postfitTriggered: block2Col.getAttribute('data-layout-postfit-triggered') === 'true',
+                    postfitOuterOverflow: parseFloat(block2Col.getAttribute('data-layout-postfit-outer-overflow')) || 0,
+                    postfitInnerOverflow: parseFloat(block2Col.getAttribute('data-layout-postfit-inner-overflow')) || 0
+                });
+
+                remPageHeight = Math.max(0, pageLayout.bodyFlow.getBoundingClientRect().bottom - block2Col.getBoundingClientRect().bottom);
                 pageBodyHasContent = true;
                 finalizeNotePositions(pagePendingNotes, Math.max(rCol.scrollHeight, lCol.scrollHeight));
             }
@@ -4007,6 +5040,10 @@ function typesetDocumentCore() {
             // השורות היתומות תופסות את מקום המתיחה במקום לעבור לעמוד הבא.
             stretchPageToBottom();
             const reclaimed = tryReclaimOrphanTail(pageLayout, pendingWordTokens, reservedNow, totalFlowH);
+            const postReclaimLast = pageLayout.bodyFlow.lastElementChild;
+            if (postReclaimLast?.classList?.contains('block-2col') || postReclaimLast?.classList?.contains('block-single-col')) {
+                recordLayoutGeometryStage(postReclaimLast, 'after-orphan-reclaim', pageLayout.bodyFlow, { reclaimedOrphanTail: reclaimed });
+            }
             if (reclaimed) {
                 pendingWordTokens = null;
                 tokenIndex++;
@@ -4024,13 +5061,86 @@ function typesetDocumentCore() {
                     const lC = blk.querySelector('.left-col');
                     if (!rC || !lC) return;
                     const fDiff = rC.scrollHeight - lC.scrollHeight;
-                    if (fDiff > 2 && fDiff <= 100) {
-                        justifyColumnVertically(lC, rC.scrollHeight, styleObj, BALANCE_FINAL_JUSTIFY_MAX);
-                    } else if (fDiff < -2 && Math.abs(fDiff) <= 100) {
-                        justifyColumnVertically(rC, lC.scrollHeight, styleObj, BALANCE_FINAL_JUSTIFY_MAX);
+                    if (!(fDiff > 2 && fDiff <= 100) && !(fDiff < -2 && Math.abs(fDiff) <= 100)) return;
+
+                    // This late pass runs after the page's hard-fit guard and after
+                    // stretchPageToBottom(). A vertical-justify overshoot here can
+                    // recreate a body-flow overflow (observed: +29.94px on page פד).
+                    // Snapshot the block itself as well as descendants, then accept the
+                    // adjustment only if neither the outer box nor the tallest column grows.
+                    const outerBefore = blk.getBoundingClientRect().height;
+                    const innerBefore = Math.max(rC.scrollHeight, lC.scrollHeight);
+                    const targetCol = fDiff > 2 ? lC : rC;
+                    const targetHeight = fDiff > 2 ? rC.scrollHeight : lC.scrollHeight;
+                    const captureJustifyColumn = col => ({
+                        side: col.classList.contains('right-col') ? 'right' : 'left',
+                        scrollHeight: col.scrollHeight,
+                        rectHeight: Math.round(col.getBoundingClientRect().height * 100) / 100,
+                        paragraphs: Array.from(col.children).filter(el => el.tagName === 'P').map(p => {
+                            const cs = getComputedStyle(p);
+                            const win = p.querySelector('.first-word-window');
+                            return {
+                                tokenId: p.getAttribute('data-token-id'),
+                                className: p.className,
+                                text: (p.getAttribute('data-raw-text') || p.textContent || '').trim().slice(0, 100),
+                                rectHeight: Math.round(p.getBoundingClientRect().height * 100) / 100,
+                                offsetHeight: p.offsetHeight,
+                                scrollHeight: p.scrollHeight,
+                                lineHeight: cs.lineHeight,
+                                paddingBottom: cs.paddingBottom,
+                                marginBottom: cs.marginBottom,
+                                baseLineHeight: p.getAttribute('data-base-lh'),
+                                firstWordWindow: win ? {
+                                    styleHeight: win.style.height || '',
+                                    offsetHeight: win.offsetHeight,
+                                    rectHeight: Math.round(win.getBoundingClientRect().height * 100) / 100
+                                } : null
+                            };
+                        })
+                    });
+                    const columnsBefore = [captureJustifyColumn(rC), captureJustifyColumn(lC)];
+                    const elementsBefore = [blk, ...blk.querySelectorAll('*')];
+                    const attrsBefore = elementsBefore.map(el =>
+                        [el, Array.from(el.attributes).map(attr => [attr.name, attr.value])]);
+
+                    justifyColumnVertically(targetCol, targetHeight, styleObj, BALANCE_FINAL_JUSTIFY_MAX);
+
+                    const outerAfter = blk.getBoundingClientRect().height;
+                    const innerAfter = Math.max(rC.scrollHeight, lC.scrollHeight);
+                    const columnsAfter = [captureJustifyColumn(rC), captureJustifyColumn(lC)];
+                    const grew = outerAfter > outerBefore + 0.5 || innerAfter > innerBefore + 0.5;
+                    if (grew) {
+                        const diagnostic = {
+                            version: 1,
+                            targetSide: targetCol.classList.contains('right-col') ? 'right' : 'left',
+                            requestedTargetHeight: targetHeight,
+                            initialDiff: Math.abs(fDiff),
+                            outerBefore, outerAfter,
+                            innerBefore, innerAfter,
+                            columnsBefore, columnsAfter
+                        };
+                        for (const [el, attrs] of attrsBefore) {
+                            for (const attr of Array.from(el.attributes)) el.removeAttribute(attr.name);
+                            for (const [name, value] of attrs) el.setAttribute(name, value);
+                        }
+                        // Preserve transient pre-rollback evidence separately from the restored layout.
+                        blk.setAttribute('data-layout-page-final-justify-diagnostic', JSON.stringify(diagnostic));
+                        blk.setAttribute('data-layout-page-final-justify-rolled-back', 'true');
+                    } else {
+                        blk.setAttribute('data-layout-page-final-justify-rolled-back', 'false');
                     }
+                    repositionBlockNotes(blk, Math.max(rC.scrollHeight, lC.scrollHeight));
+                    recordLayoutGeometryStage(blk, 'after-page-final-justify', flow, {
+                        pageFinalJustifyAttempted: Math.abs(fDiff) > 2 && Math.abs(fDiff) <= 100,
+                        pageFinalJustifyRolledBack: blk.getAttribute('data-layout-page-final-justify-rolled-back') === 'true'
+                    });
                 });
             }
+            // Final reservation check: stretching, orphan-tail reclamation, and the final
+            // column-justification pass can change the page's note queue after the first
+            // redoCheck. Check again at the last point where the whole page can still be
+            // discarded and deterministically rebuilt from pageState.
+            if (redoCheck()) continue;
         }
     }
 
@@ -4048,7 +5158,6 @@ function typesetDocumentCore() {
 
     // [חדש] קווי ההפרדה בין הטורים מותאמים לקצוות הטקסט בפועל (אחרי שכל הבלוקים סופיים)
     fitColumnDividers(container);
-
     // [תיקון] מספרי העמודים בתוכן העניינים נגזרים מהמיקום הסופי בפועל ב-DOM (ולא מהרישום תוך כדי מילוי),
     // כי כותרת שהוחזרה לעמוד הבא יחד עם הפסקה שאחריה השאירה ברישום את העמוד הישן.
     rebuildHeadingPageMapFromDOM(container, headingPageMap);
@@ -4076,7 +5185,125 @@ function typesetDocumentCore() {
     // כש- ( נפתח בפסקה אחת ו- ) נסגר בפסקה אחרת, הפסקאות שביניהן צריכות גם לקבל סגנון טקסט-מוסגר.
     // הפונקציה הזו עוברת על כל הפסקאות בסדר מסמך, עוקבת אחרי עומק הסוגריים, ועוטפת פסקאות
     // שלמות ב-span של paren-text כשהן בתוך סוגריים פתוחות.
+    // Capture the exact geometry immediately before and after cross-paragraph
+    // parenthesis styling. This is diagnostics only: it must not alter layout decisions.
+    const crossParenBefore = new Map();
+    const crossParenAfter = new Map();
+    const captureCrossParenBlock = blk => {
+        const captureCol = col => ({
+            scrollHeight: col.scrollHeight,
+            rectHeight: Math.round(col.getBoundingClientRect().height * 1000) / 1000,
+            paragraphs: Array.from(col.children).filter(p => p.tagName === 'P').map((p, index) => {
+                const r = p.getBoundingClientRect();
+                const cs = getComputedStyle(p);
+                const range = document.createRange();
+                range.selectNodeContents(p);
+                const lineMap = new Map();
+                for (const q of Array.from(range.getClientRects())) {
+                    if (q.width <= 0.1 || q.height <= 0.1) continue;
+                    const key = Math.round(q.top * 2) / 2;
+                    const line = lineMap.get(key) || {
+                        x: q.left, right: q.right, top: q.top, bottom: q.bottom
+                    };
+                    line.x = Math.min(line.x, q.left);
+                    line.right = Math.max(line.right, q.right);
+                    line.top = Math.min(line.top, q.top);
+                    line.bottom = Math.max(line.bottom, q.bottom);
+                    lineMap.set(key, line);
+                }
+                const lineRects = Array.from(lineMap.values())
+                    .sort((a, b) => a.top - b.top || a.x - b.x)
+                    .map(q => [
+                        Math.round(q.x * 1000) / 1000,
+                        Math.round(q.top * 1000) / 1000,
+                        Math.round((q.right - q.x) * 1000) / 1000,
+                        Math.round((q.bottom - q.top) * 1000) / 1000
+                    ]);
+                return {
+                    index,
+                    tokenId: p.getAttribute('data-token-id') || '',
+                    rawTextLength: (p.getAttribute('data-raw-text') || p.textContent || '').length,
+                    height: Math.round(r.height * 1000) / 1000,
+                    y: Math.round(r.y * 1000) / 1000,
+                    lineCount: lineRects.length,
+                    lineRects,
+                    fontSize: cs.fontSize,
+                    lineHeight: cs.lineHeight,
+                    hasParenText: !!p.querySelector('.paren-text')
+                };
+            })
+        });
+        const right = blk.querySelector('.right-col');
+        const left = blk.querySelector('.left-col');
+        return {
+            right: right ? captureCol(right) : null,
+            left: left ? captureCol(left) : null,
+            outerHeight: Math.round(blk.getBoundingClientRect().height * 1000) / 1000
+        };
+    };
+    container.querySelectorAll('.block-2col').forEach(blk => {
+        crossParenBefore.set(blk, captureCrossParenBlock(blk));
+    });
+
     applyCrossParagraphParens(container);
+    // Diagnostics only: classify local and cross-column/page parenthesis scopes.
+    try {
+        const scopeSummary = captureParenthesisScopeDiagnostics(container);
+        container.setAttribute('data-layout-paren-scope-summary', JSON.stringify(scopeSummary));
+    } catch (error) {
+        container.setAttribute('data-layout-paren-scope-diagnostic-error', String(error?.message || error));
+    }
+
+    container.querySelectorAll('.block-2col').forEach(blk => {
+        const before = crossParenBefore.get(blk);
+        if (!before) return;
+        const after = captureCrossParenBlock(blk);
+        crossParenAfter.set(blk, after);
+        const changed = [];
+        let geometryChangedParagraphCount = 0;
+        let styleChangedParagraphCount = 0;
+        for (const side of ['right', 'left']) {
+            const b = before[side], a = after[side];
+            if (!b || !a) continue;
+            const n = Math.max(b.paragraphs.length, a.paragraphs.length);
+            for (let i = 0; i < n; i++) {
+                const bp = b.paragraphs[i] || null, ap = a.paragraphs[i] || null;
+                const geometryChanged = !bp || !ap || bp.height !== ap.height || bp.y !== ap.y ||
+                    bp.lineCount !== ap.lineCount || JSON.stringify(bp.lineRects) !== JSON.stringify(ap.lineRects);
+                const styleChanged = !bp || !ap || bp.fontSize !== ap.fontSize ||
+                    bp.lineHeight !== ap.lineHeight || bp.hasParenText !== ap.hasParenText;
+                if (geometryChanged) geometryChangedParagraphCount++;
+                if (styleChanged) styleChangedParagraphCount++;
+                if (geometryChanged || styleChanged) {
+                    changed.push({ side, index: i, geometryChanged, styleChanged, before: bp, after: ap });
+                }
+            }
+        }
+        blk.setAttribute('data-layout-cross-paren-diagnostic', JSON.stringify({
+            version: 1,
+            phase: 'immediately-after-cross-paragraph-paren-styling',
+            before: {
+                rightHeight: before.right?.scrollHeight ?? null,
+                leftHeight: before.left?.scrollHeight ?? null,
+                outerHeight: before.outerHeight
+            },
+            after: {
+                rightHeight: after.right?.scrollHeight ?? null,
+                leftHeight: after.left?.scrollHeight ?? null,
+                outerHeight: after.outerHeight
+            },
+            delta: {
+                rightHeight: (after.right?.scrollHeight ?? 0) - (before.right?.scrollHeight ?? 0),
+                leftHeight: (after.left?.scrollHeight ?? 0) - (before.left?.scrollHeight ?? 0),
+                outerHeight: after.outerHeight - before.outerHeight
+            },
+            changedParagraphCount: changed.length,
+            geometryChangedParagraphCount,
+            styleChangedParagraphCount,
+            changedParagraphs: changed.slice(0, 40),
+            truncatedChangedParagraphs: changed.length > 40
+        }));
+    });
 
     // [תיקון קריטי] אחרי applyCrossParagraphParens, עבור על כל הבלוקים בכל העמודים
     // וסגור פערים שנוצרו. applyCrossParagraphParens עוטף פסקאות שלמות ב-span עם גופן
@@ -4102,27 +5329,349 @@ function typesetDocumentCore() {
             const fDiff = rH - lH;
             if (Math.abs(fDiff) <= 2 || Math.abs(fDiff) > 150) return;
 
+            // Snapshot before the final global balancing pass. This pass runs after the
+            // per-page hard-fit guard, so it must never make an already-laid-out block taller.
+            const outerBefore = blk.getBoundingClientRect().height;
+            const innerBefore = Math.max(rH, lH);
+            const flowForGlobalJustify = blk.closest('.page-body-flow');
+            const flowBottomBefore = flowForGlobalJustify
+                ? flowForGlobalJustify.getBoundingClientRect().bottom : null;
+            const flowMaxChildBottomBefore = flowForGlobalJustify
+                ? Math.max(flowBottomBefore, ...Array.from(flowForGlobalJustify.children)
+                    .map(child => child.getBoundingClientRect().bottom))
+                : null;
+            blk.setAttribute('data-layout-global-justify-before-right', String(rH));
+            blk.setAttribute('data-layout-global-justify-before-left', String(lH));
+            blk.setAttribute('data-layout-global-justify-before-outer', String(outerBefore));
+            const captureGlobalJustifyColumn = col => ({
+                side: col.classList.contains('right-col') ? 'right' : 'left',
+                scrollHeight: col.scrollHeight,
+                paragraphs: Array.from(col.children).filter(p => p.tagName === 'P').map(p => {
+                    const cs = getComputedStyle(p);
+                    const win = p.querySelector('.first-word-window');
+                    const lineInfo = paraLineInfo(p);
+                    return {
+                        tokenId: p.getAttribute('data-token-id'),
+                        className: p.className,
+                        text: (p.getAttribute('data-raw-text') || p.textContent || '').trim().slice(0, 90),
+                        lines: lineInfo.lines,
+                        rectHeight: Math.round(p.getBoundingClientRect().height * 100) / 100,
+                        offsetHeight: p.offsetHeight,
+                        scrollHeight: p.scrollHeight,
+                        lineHeight: cs.lineHeight,
+                        paddingBottom: cs.paddingBottom,
+                        marginBottom: cs.marginBottom,
+                        baseLineHeight: p.getAttribute('data-base-lh'),
+                        firstWordWindow: win ? {
+                            styleHeight: win.style.height || '',
+                            offsetHeight: win.offsetHeight,
+                            rectHeight: Math.round(win.getBoundingClientRect().height * 100) / 100
+                        } : null
+                    };
+                })
+            });
+            const globalColumnsBefore = [captureGlobalJustifyColumn(rC), captureGlobalJustifyColumn(lC)];
+            const attrsBefore = Array.from(blk.querySelectorAll('*')).map(el =>
+                [el, Array.from(el.attributes).map(attr => [attr.name, attr.value])]);
+            let globalJustifyOvershootBeforeShrink = null;
+            let globalJustifyOvershootAfterShrink = null;
+
             if (fDiff > 2) {
                 // טור ימין גבוה יותר — מותחים את שמאל להגיע אליו
                 justifyColumnVertically(lC, rH, styleObj, 150, null);
-                // בדיקת יירוס: אם שמאל הירבר ונהיה גבוה מימין — מכווצים חזרה
-                const lHafter = lC.scrollHeight;
-                if (lHafter > rH + 1.5) {
+                // Record the quantized overshoot before and after the bounded correction.
+                globalJustifyOvershootBeforeShrink = lC.scrollHeight - rH;
+                if (globalJustifyOvershootBeforeShrink > 0.5) {
                     shrinkColumnVertically(lC, rH, styleObj, 150);
                 }
+                globalJustifyOvershootAfterShrink = lC.scrollHeight - rH;
             } else {
                 // טור שמאל גבוה יותר — מותחים את ימין להגיע אליו
                 justifyColumnVertically(rC, lH, styleObj, 150, null);
-                // בדיקת יירוס: אם ימין הירבר ונהיה גבוה משמאל — מכווצים חזרה
-                const rHafter = rC.scrollHeight;
-                if (rHafter > lH + 1.5) {
+                globalJustifyOvershootBeforeShrink = rC.scrollHeight - lH;
+                if (globalJustifyOvershootBeforeShrink > 0.5) {
                     shrinkColumnVertically(rC, lH, styleObj, 150);
                 }
+                globalJustifyOvershootAfterShrink = rC.scrollHeight - lH;
             }
 
-            // [תיקון] החזרת הערות הצד למקומן אחרי המתיחה/כיווץ
+            // Hard postcondition: this late pass must not increase the block's required
+            // height. The earlier per-block fit guard has already run; allowing this
+            // pass to expand a block can recreate the same ~30px body-flow overflow.
+            const outerAfter = blk.getBoundingClientRect().height;
+            const innerAfter = Math.max(rC.scrollHeight, lC.scrollHeight);
+            blk.setAttribute('data-layout-global-justify-after-right', String(rC.scrollHeight));
+            blk.setAttribute('data-layout-global-justify-after-left', String(lC.scrollHeight));
+            blk.setAttribute('data-layout-global-justify-after-outer', String(outerAfter));
+            blk.setAttribute('data-layout-global-justify-after-inner', String(innerAfter));
+            const flowBottomAfter = flowForGlobalJustify
+                ? flowForGlobalJustify.getBoundingClientRect().bottom : null;
+            const flowMaxChildBottomAfter = flowForGlobalJustify
+                ? Math.max(flowBottomAfter, ...Array.from(flowForGlobalJustify.children)
+                    .map(child => child.getBoundingClientRect().bottom))
+                : null;
+            // A subpixel grid/scrollHeight rounding delta is not, by itself, a fit failure.
+            // Accept up to 1px of outer-box growth when the tallest content height did not
+            // grow and this mutation does not push the flow's last child farther beyond
+            // the page's body-flow boundary. Real content growth and actual flow overflow
+            // still trigger the rollback below.
+            const globalJustifyOuterGrowth = outerAfter > outerBefore + 1.0;
+            const globalJustifyFlowOverflowIntroduced = flowBottomAfter !== null
+                && flowMaxChildBottomAfter > flowBottomAfter + 0.5
+                && flowMaxChildBottomAfter > flowMaxChildBottomBefore + 0.5;
+            const globalJustifyTallestGrowth = innerAfter > innerBefore + 0.5;
+            if (globalJustifyOuterGrowth || globalJustifyFlowOverflowIntroduced || globalJustifyTallestGrowth) {
+                const globalColumnsAfter = [captureGlobalJustifyColumn(rC), captureGlobalJustifyColumn(lC)];
+                const globalDiagnostic = {
+                    version: 1,
+                    initialDiff: Math.abs(fDiff),
+                    targetSide: fDiff > 2 ? 'left' : 'right',
+                    targetHeight: fDiff > 2 ? rH : lH,
+                    overshootBeforeShrink: globalJustifyOvershootBeforeShrink,
+                    overshootAfterShrink: globalJustifyOvershootAfterShrink,
+                    outerBefore, outerAfter, innerBefore, innerAfter,
+                    flowBottomBefore, flowBottomAfter,
+                    flowMaxChildBottomBefore, flowMaxChildBottomAfter,
+                    rollback: {
+                        outerGrowth: globalJustifyOuterGrowth,
+                        flowOverflowIntroduced: globalJustifyFlowOverflowIntroduced,
+                        tallestGrowth: globalJustifyTallestGrowth
+                    },
+                    columnsBefore: globalColumnsBefore,
+                    columnsAfter: globalColumnsAfter
+                };
+                for (const [el, attrs] of attrsBefore) {
+                    for (const attr of Array.from(el.attributes)) el.removeAttribute(attr.name);
+                    for (const [name, value] of attrs) el.setAttribute(name, value);
+                }
+                blk.setAttribute('data-layout-global-justify-diagnostic', JSON.stringify(globalDiagnostic));
+                blk.setAttribute('data-layout-global-justify-rolled-back', 'true');
+                blk.setAttribute('data-layout-global-justify-rollback-reason',
+                    globalJustifyOuterGrowth && globalJustifyTallestGrowth ? 'outer-and-tallest-growth' :
+                    globalJustifyOuterGrowth && globalJustifyFlowOverflowIntroduced ? 'outer-growth-and-flow-overflow' :
+                    globalJustifyFlowOverflowIntroduced ? 'flow-overflow' :
+                    globalJustifyOuterGrowth ? 'outer-growth' : 'tallest-growth');
+            } else {
+                blk.setAttribute('data-layout-global-justify-rolled-back', 'false');
+                blk.setAttribute('data-layout-global-justify-rollback-reason', 'none');
+            }
+            blk.setAttribute('data-layout-global-justify-overshoot-before-shrink',
+                String(globalJustifyOvershootBeforeShrink));
+            blk.setAttribute('data-layout-global-justify-overshoot-after-shrink',
+                String(globalJustifyOvershootAfterShrink));
+
+            // [תיקון] החזרת הערות הצד למקומן אחרי המתיחה/כיווץ/rollback
             repositionBlockNotes(blk, Math.max(rC.scrollHeight, lC.scrollHeight));
         });
+        // All blocks and cross-paragraph styling are final at this point. Resolve only
+        // side-note page-boundary overflow that can be corrected without a same-side collision.
+        repositionOverflowingSideNotes(container);
+    }
+
+    // Canonical final-geometry snapshot: this is deliberately the LAST layout pass.
+    // Earlier data-layout-final-* values describe the local balance stage; overwrite
+    // them here so the audit always reads the geometry that survived all late passes.
+    container.querySelectorAll('.block-2col').forEach(blk => {
+        const right = blk.querySelector('.right-col');
+        const left = blk.querySelector('.left-col');
+        if (!right || !left) return;
+
+        // Attribute rollback is used by several speculative layout passes. Re-emit the
+        // in-memory stage trace at the canonical final snapshot so those rollbacks cannot
+        // erase the evidence needed to explain final containment findings.
+        const stageDiagnostic = layoutGeometryStageSnapshots.get(blk);
+        if (stageDiagnostic) blk.setAttribute('data-layout-stage-geometry-diagnostic', JSON.stringify(stageDiagnostic));
+        recordLayoutGeometryStage(blk, 'canonical-final', blk.closest('.page-body-flow'), {
+            phase: 'post-global-justify',
+            canonicalFinalSnapshot: true
+        });
+
+        const rightHeight = right.scrollHeight;
+        const leftHeight = left.scrollHeight;
+        const innerHeight = Math.max(rightHeight, leftHeight);
+        const outerHeight = blk.getBoundingClientRect().height;
+        // Extend the parenthesis checkpoint through the later global balancing and
+        // side-note correction passes; this is observational and does not mutate layout.
+        try {
+            const rawParen = blk.getAttribute('data-layout-cross-paren-diagnostic');
+            if (rawParen) {
+                const parenDiagnostic = JSON.parse(rawParen);
+                const postGlobal = captureCrossParenBlock(blk);
+                const postParen = parenDiagnostic.after || {};
+                const paragraphChanges = [];
+                let geometryChangedParagraphCount = 0;
+                let styleChangedParagraphCount = 0;
+                for (const side of ['right', 'left']) {
+                    const beforeRows = crossParenAfter.get(blk)?.[side]?.paragraphs || [];
+                    const afterRows = postGlobal[side]?.paragraphs || [];
+                    const count = Math.max(beforeRows.length, afterRows.length);
+                    for (let i = 0; i < count; i++) {
+                        const b = beforeRows[i] || null, a = afterRows[i] || null;
+                        const geometryChanged = !b || !a || b.height !== a.height || b.y !== a.y ||
+                            b.lineCount !== a.lineCount || JSON.stringify(b.lineRects) !== JSON.stringify(a.lineRects);
+                        const styleChanged = !b || !a || b.fontSize !== a.fontSize ||
+                            b.lineHeight !== a.lineHeight || b.hasParenText !== a.hasParenText;
+                        if (geometryChanged) geometryChangedParagraphCount++;
+                        if (styleChanged) styleChangedParagraphCount++;
+                        if (geometryChanged || styleChanged) {
+                            paragraphChanges.push({ side, index: i, geometryChanged, styleChanged, afterParen: b, postGlobal: a });
+                        }
+                    }
+                }
+                parenDiagnostic.version = 2;
+                parenDiagnostic.postGlobal = {
+                    rightHeight: postGlobal.right?.scrollHeight ?? null,
+                    leftHeight: postGlobal.left?.scrollHeight ?? null,
+                    rightRectHeight: postGlobal.right?.rectHeight ?? null,
+                    leftRectHeight: postGlobal.left?.rectHeight ?? null,
+                    outerHeight: postGlobal.outerHeight,
+                    deltaFromPostParen: {
+                        rightHeight: (postGlobal.right?.scrollHeight ?? 0) - (postParen.rightHeight ?? 0),
+                        leftHeight: (postGlobal.left?.scrollHeight ?? 0) - (postParen.leftHeight ?? 0),
+                        outerHeight: postGlobal.outerHeight - (parenDiagnostic.after?.outerHeight ?? postGlobal.outerHeight)
+                    },
+                    changedParagraphCount: paragraphChanges.length,
+                    geometryChangedParagraphCount,
+                    styleChangedParagraphCount,
+                    changedParagraphs: paragraphChanges.slice(0, 40),
+                    truncatedChangedParagraphs: paragraphChanges.length > 40
+                };
+                blk.setAttribute('data-layout-cross-paren-diagnostic', JSON.stringify(parenDiagnostic));
+            }
+        } catch (_) {
+            blk.setAttribute('data-layout-cross-paren-diagnostic-error', 'post-global-capture-failed');
+        }
+        const availableRaw = blk.getAttribute('data-layout-balance-available');
+        const available = availableRaw !== null ? Number(availableRaw) : NaN;
+        const fits = Number.isFinite(available) ? Math.max(innerHeight, outerHeight) <= available + 0.5 : null;
+        const globalRollback = blk.getAttribute('data-layout-global-justify-rolled-back') === 'true';
+        const localRollback = blk.getAttribute('data-layout-balance-final-justify-rolled-back') === 'true';
+        const localRollbackReason = blk.getAttribute('data-layout-balance-final-justify-rollback-reason') || 'none';
+        const pageRollback = blk.getAttribute('data-layout-page-final-justify-rolled-back') === 'true';
+        const rollbackReason = globalRollback
+            ? (blk.getAttribute('data-layout-global-justify-rollback-reason') || 'global-justify-rollback')
+            : pageRollback
+                ? 'page-final-justify-rollback'
+                : localRollback
+                    ? (localRollbackReason === 'none' ? 'local-final-justify-rollback' : localRollbackReason)
+                    : 'none';
+
+        blk.setAttribute('data-layout-final-phase', 'post-global-justify');
+        blk.setAttribute('data-layout-final-right-height', String(rightHeight));
+        blk.setAttribute('data-layout-final-left-height', String(leftHeight));
+        blk.setAttribute('data-layout-final-diff', String(rightHeight - leftHeight));
+        blk.setAttribute('data-layout-final-inner-height', String(innerHeight));
+        blk.setAttribute('data-layout-final-outer-height', String(outerHeight));
+        blk.setAttribute('data-layout-final-fits', fits === null ? 'unknown' : String(fits));
+        blk.setAttribute('data-layout-final-justify-rollback-reason', rollbackReason);
+
+        const numericAttr = name => {
+            const value = blk.getAttribute(name);
+            if (value === null || value.trim() === '') return null;
+            const number = Number(value);
+            return Number.isFinite(number) ? number : null;
+        };
+        const decisionRecord = {
+            schemaVersion: 1,
+            phase: 'post-global-justify',
+            selection: {
+                status: blk.getAttribute('data-layout-balance-status') || 'not-recorded',
+                skipReason: blk.getAttribute('data-layout-balance-skip-reason') || null,
+                fallback: blk.getAttribute('data-layout-balance-fallback') || null,
+                fallbackSide: blk.getAttribute('data-layout-balance-fallback-side') || null,
+                fallbackHeightBefore: numericAttr('data-layout-balance-fallback-height-before'),
+                fallbackHeightAfter: numericAttr('data-layout-balance-fallback-height-after'),
+                fallbackWidth: numericAttr('data-layout-balance-fallback-width'),
+                fallbackSparseLine: blk.getAttribute('data-layout-balance-fallback-sparse-line') || null,
+                policy: blk.getAttribute('data-layout-balance-selection-policy') || null,
+                candidateCount: numericAttr('data-layout-balance-candidates'),
+                selectedCandidateIndex: numericAttr('data-layout-balance-selected-candidate'),
+                candidateTable: (() => {
+                    try {
+                        const raw = blk.getAttribute('data-layout-balance-candidate-table');
+                        return raw ? JSON.parse(raw) : null;
+                    } catch (_) { return null; }
+                })(),
+                splitItemIndex: numericAttr('data-layout-balance-split-item-index'),
+                splitLineCount: numericAttr('data-layout-balance-split-line-count'),
+                score: (() => {
+                    try {
+                        const raw = blk.getAttribute('data-layout-balance-selection-score');
+                        return raw ? JSON.parse(raw) : null;
+                    } catch (_) { return null; }
+                })(),
+                availableHeight: Number.isFinite(available) ? available : null,
+                candidateGeometry: {
+                    rightHeight: numericAttr('data-layout-balance-right'),
+                    leftHeight: numericAttr('data-layout-balance-left'),
+                    diff: numericAttr('data-layout-balance-diff'),
+                    fits: blk.getAttribute('data-layout-balance-fits'),
+                    valid: blk.getAttribute('data-layout-balance-valid'),
+                    overflow: numericAttr('data-layout-balance-over')
+                },
+                routing: blk.getAttribute('data-layout-balance-routing') || 'not-recorded',
+                lightJustify: {
+                    beforeRightHeight: numericAttr('data-layout-balance-light-before-right'),
+                    beforeLeftHeight: numericAttr('data-layout-balance-light-before-left'),
+                    afterRightHeight: numericAttr('data-layout-balance-light-after-right'),
+                    afterLeftHeight: numericAttr('data-layout-balance-light-after-left'),
+                    residualDiff: numericAttr('data-layout-balance-light-residual-diff'),
+                    fallbackReason: blk.getAttribute('data-layout-balance-light-fallback-reason') || null
+                }
+            },
+            finalJustify: {
+                capacityBefore: (() => {
+                    try {
+                        const raw = blk.getAttribute('data-layout-final-justify-capacity-before');
+                        return raw ? JSON.parse(raw) : null;
+                    } catch (_) { return null; }
+                })(),
+                capacityAfter: (() => {
+                    try {
+                        const raw = blk.getAttribute('data-layout-final-justify-capacity-after');
+                        return raw ? JSON.parse(raw) : null;
+                    } catch (_) { return null; }
+                })(),
+                targetSide: blk.getAttribute('data-layout-final-justify-target-side') || 'none',
+                targetHeight: numericAttr('data-layout-final-justify-target-height'),
+                beforeRightHeight: numericAttr('data-layout-final-justify-before-right'),
+                beforeLeftHeight: numericAttr('data-layout-final-justify-before-left'),
+                beforeOuterHeight: numericAttr('data-layout-final-justify-before-outer'),
+                attemptRightHeight: numericAttr('data-layout-final-justify-attempt-right'),
+                attemptLeftHeight: numericAttr('data-layout-final-justify-attempt-left'),
+                attemptOuterHeight: numericAttr('data-layout-final-justify-attempt-outer'),
+                balanceBeforeDiff: numericAttr('data-layout-final-justify-balance-before-diff'),
+                balanceAttemptDiff: numericAttr('data-layout-final-justify-balance-attempt-diff'),
+                overshootBeforeShrink: numericAttr('data-layout-final-justify-overshoot-before-shrink'),
+                overshootAfterShrink: numericAttr('data-layout-final-justify-overshoot-after-shrink'),
+                rollbackReason: blk.getAttribute('data-layout-balance-final-justify-rollback-reason') || 'none'
+            },
+            final: {
+                rightHeight, leftHeight, diff: rightHeight - leftHeight,
+                innerHeight, outerHeight, fits: fits === null ? 'unknown' : fits,
+                availableHeight: Number.isFinite(available) ? available : null
+            },
+            mutations: {
+                localJustifyRolledBack: localRollback,
+                localRollbackReason,
+                globalJustifyRolledBack: globalRollback,
+                globalRollbackReason: blk.getAttribute('data-layout-global-justify-rollback-reason') || null,
+                pageFinalJustifyRolledBack: pageRollback,
+                finalRollbackReason: rollbackReason
+            }
+        };
+        blk.setAttribute('data-layout-decision-record', JSON.stringify(decisionRecord));
+    });
+
+    // Run the local-parenthesis font counterfactual only after cross-paragraph styling,
+    // scope classification, every balancing pass, and canonical final geometry capture.
+    // It temporarily changes font metrics on .paren-text spans and must restore the exact
+    // inline styles and geometry; it must not participate in layout decisions.
+    try {
+        const parenFontCounterfactualSummary = captureParenFontCounterfactualDiagnostics(container);
+        container.setAttribute('data-layout-paren-font-counterfactual-summary', JSON.stringify(parenFontCounterfactualSummary));
+    } catch (error) {
+        container.setAttribute('data-layout-paren-font-counterfactual-error', String(error?.message || error));
     }
 }
 
@@ -4133,21 +5682,287 @@ function typesetDocumentCore() {
 
    חשוב: הפונקציה הזו פועלת אחרי כל העימוד, כולל איזון טורים. היא לא משפיעה על מדידה
    כי הסוגריים החוצות-פסקאות נדירות יחסית, והשינוי בגודל הגופן קטן (בד"כ -2pt). */
+/* אבחון אבחנתי בלבד: מיפוי סוגריים לפי מיקום פיזי אחרי העימוד.
+   אינו משנה סגנון, גובה או החלטות עימוד. מאפשר לקשור ממצא אי-איזון לטקסט בסוגריים
+   מקומי, לחציית טורים, או לחציית עמודים. הספירה תואמת ל-applyCrossParagraphParens:
+   מתעלמים מסוגריים בתוך [...] ומחשבים עומק לפי סדר DOM. */
+function captureParenthesisScopeDiagnostics(container) {
+    const paragraphs = Array.from(container.querySelectorAll('p[data-raw-text]'));
+    const pages = Array.from(container.querySelectorAll('.a4-page'));
+    const pageIndex = new Map(pages.map((page, index) => [page, index]));
+    const blockIndex = new Map();
+    Array.from(container.querySelectorAll('.block-2col')).forEach((block, index) => blockIndex.set(block, index));
+    const contexts = [];
+    const stack = [];
+    const pairs = [];
+    const blockParagraphs = new Map();
+    const countChars = (text, initialBracketDepth = 0) => {
+        let open = 0, close = 0, bracketDepth = initialBracketDepth;
+        for (const ch of text) {
+            if (ch === '[') { bracketDepth++; continue; }
+            if (ch === ']') { bracketDepth = Math.max(0, bracketDepth - 1); continue; }
+            if (bracketDepth > 0) continue;
+            if (ch === '(') open++;
+            else if (ch === ')') close++;
+        }
+        return { open, close, bracketDepth };
+    };
+    let squareBracketDepth = 0;
+    paragraphs.forEach((p, paragraphIndex) => {
+        const rawText = p.getAttribute('data-raw-text') || '';
+        const bracketDepthBefore = squareBracketDepth;
+        const counts = countChars(rawText, bracketDepthBefore);
+        squareBracketDepth = counts.bracketDepth;
+        const block = p.closest('.block-2col');
+        const page = p.closest('.a4-page');
+        const side = p.closest('.right-col') ? 'right' : p.closest('.left-col') ? 'left' : 'other';
+        const context = {
+            paragraphIndex, tokenId: p.getAttribute('data-token-id') || null,
+            pageIdx: pageIndex.has(page) ? pageIndex.get(page) : null,
+            blockIndex: block && blockIndex.has(block) ? blockIndex.get(block) : null,
+            side, rawText, openCount: counts.open, closeCount: counts.close,
+            depthBefore: stack.length, depthAfter: null,
+            hasParenTextStyle: !!p.querySelector('.paren-text'), block
+        };
+        contexts.push(context);
+        if (block) {
+            if (!blockParagraphs.has(block)) blockParagraphs.set(block, []);
+            blockParagraphs.get(block).push(context);
+        }
+        let inBracketDepth = bracketDepthBefore;
+        for (let charIndex = 0; charIndex < rawText.length; charIndex++) {
+            const ch = rawText[charIndex];
+            if (ch === '[') { inBracketDepth++; continue; }
+            if (ch === ']') { inBracketDepth = Math.max(0, inBracketDepth - 1); continue; }
+            if (inBracketDepth > 0) continue;
+            if (ch === '(') {
+                stack.push({ paragraphIndex, charIndex, context });
+            } else if (ch === ')' && stack.length) {
+                const start = stack.pop();
+                const startCtx = start.context;
+                const crossesPage = startCtx.pageIdx != null && context.pageIdx != null && startCtx.pageIdx !== context.pageIdx;
+                const crossesColumn = !crossesPage && (['right','left'].includes(startCtx.side) &&
+                    ['right','left'].includes(context.side) && startCtx.side !== context.side);
+                pairs.push({
+                    startParagraphIndex: start.paragraphIndex, endParagraphIndex: paragraphIndex,
+                    startPageIdx: startCtx.pageIdx, endPageIdx: context.pageIdx,
+                    startBlockIndex: startCtx.blockIndex, endBlockIndex: context.blockIndex,
+                    startSide: startCtx.side, endSide: context.side,
+                    startTokenId: startCtx.tokenId, endTokenId: context.tokenId,
+                    crossesPage, crossesColumn, crossesBlock: startCtx.blockIndex !== context.blockIndex,
+                    startPreview: startCtx.rawText.slice(Math.max(0, start.charIndex - 45), Math.min(startCtx.rawText.length, start.charIndex + 100)),
+                    endPreview: context.rawText.slice(Math.max(0, charIndex - 45), Math.min(context.rawText.length, charIndex + 100))
+                });
+            }
+        }
+        context.depthAfter = stack.length;
+    });
+    const crossPairs = pairs.filter(pair => pair.crossesColumn || pair.crossesPage);
+    const unmatchedOpenContexts = stack.map(open => ({
+        paragraphIndex: open.paragraphIndex, charIndex: open.charIndex,
+        pageIdx: open.context.pageIdx,
+        blockIndex: open.context.blockIndex, side: open.context.side, tokenId: open.context.tokenId,
+        preview: open.context.rawText.slice(Math.max(0, open.charIndex - 45), Math.min(open.context.rawText.length, open.charIndex + 100))
+    }));
+    const unmatchedCloseContexts = [];
+    // Recount unmatched closes separately, preserving square-bracket state across paragraphs.
+    let depthForUnmatched = 0;
+    let bracketDepthForUnmatched = 0;
+    paragraphs.forEach((p, paragraphIndex) => {
+        const rawText = p.getAttribute('data-raw-text') || '';
+        for (let charIndex = 0; charIndex < rawText.length; charIndex++) {
+            const ch = rawText[charIndex];
+            if (ch === '[') { bracketDepthForUnmatched++; continue; }
+            if (ch === ']') { bracketDepthForUnmatched = Math.max(0, bracketDepthForUnmatched - 1); continue; }
+            if (bracketDepthForUnmatched > 0) continue;
+            if (ch === '(') depthForUnmatched++;
+            else if (ch === ')') {
+                if (depthForUnmatched > 0) depthForUnmatched--;
+                else {
+                    const page = p.closest('.a4-page');
+                    const block = p.closest('.block-2col');
+                    unmatchedCloseContexts.push({
+                        paragraphIndex, charIndex,
+                        pageIdx: pageIndex.has(page) ? pageIndex.get(page) : null,
+                        blockIndex: block && blockIndex.has(block) ? blockIndex.get(block) : null,
+                        side: p.closest('.right-col') ? 'right' : p.closest('.left-col') ? 'left' : 'other',
+                        tokenId: p.getAttribute('data-token-id') || null,
+                        preview: rawText.slice(Math.max(0, charIndex - 60), Math.min(rawText.length, charIndex + 100))
+                    });
+                }
+            }
+        }
+    });
+    const allBlocks = Array.from(container.querySelectorAll('.block-2col'));
+    allBlocks.forEach(block => {
+        const local = blockParagraphs.get(block) || [];
+        const localFirst = local.length ? local[0].paragraphIndex : -1;
+        const localLast = local.length ? local[local.length - 1].paragraphIndex : -1;
+        const localPairs = crossPairs.filter(pair => localFirst >= 0 &&
+            pair.startParagraphIndex <= localLast && pair.endParagraphIndex >= localFirst);
+        const endpointPairs = crossPairs.filter(pair => pair.startBlockIndex === blockIndex.get(block) ||
+            pair.endBlockIndex === blockIndex.get(block));
+        const sideSummary = side => {
+            const ps = local.filter(p => p.side === side);
+            return {
+                paragraphCount: ps.length,
+                paragraphsWithParentheses: ps.filter(p => p.openCount || p.closeCount).length,
+                openCount: ps.reduce((n, p) => n + p.openCount, 0),
+                closeCount: ps.reduce((n, p) => n + p.closeCount, 0),
+                paragraphsInsideOpenScopeAtStart: ps.filter(p => p.depthBefore > 0).length,
+                paragraphsInsideOpenScopeAtEnd: ps.filter(p => p.depthAfter > 0).length,
+                paragraphsWithParenTextStyle: ps.filter(p => p.hasParenTextStyle).length,
+                samples: ps.filter(p => p.openCount || p.closeCount || p.depthBefore > 0 || p.depthAfter > 0 || p.hasParenTextStyle)
+                    .slice(0, 12).map(p => ({
+                        tokenId: p.tokenId, paragraphIndex: p.paragraphIndex,
+                        openCount: p.openCount, closeCount: p.closeCount,
+                        depthBefore: p.depthBefore, depthAfter: p.depthAfter,
+                        hasParenTextStyle: p.hasParenTextStyle,
+                        preview: p.rawText.slice(0, 180)
+                    }))
+            };
+        };
+        const diag = {
+            version: 1,
+            paragraphCount: local.length,
+            right: sideSummary('right'),
+            left: sideSummary('left'),
+            crossBoundaryScopeCountIntersectingBlock: localPairs.length,
+            crossColumnScopeCountIntersectingBlock: localPairs.filter(pair => pair.crossesColumn).length,
+            crossPageScopeCountIntersectingBlock: localPairs.filter(pair => pair.crossesPage).length,
+            crossBoundaryScopeEndpointCount: endpointPairs.length,
+            crossBoundaryScopes: endpointPairs.slice(0, 12),
+            unmatchedOpenCountAtDocumentEnd: unmatchedOpenContexts.filter(x => x.blockIndex === blockIndex.get(block)).length,
+            unmatchedCloseCountInBlock: unmatchedCloseContexts.filter(x => x.blockIndex === blockIndex.get(block)).length
+        };
+        block.setAttribute('data-layout-paren-scope-diagnostic', JSON.stringify(diag));
+    });
+    return {
+        paragraphCount: paragraphs.length, pairedParenthesisCount: pairs.length,
+        crossColumnPairCount: crossPairs.filter(pair => pair.crossesColumn).length,
+        crossPagePairCount: crossPairs.filter(pair => pair.crossesPage).length,
+        unmatchedOpenCountAtDocumentEnd: unmatchedOpenContexts.length,
+        unmatchedOpenExamples: unmatchedOpenContexts.slice(0, 20),
+        unmatchedCloseCount: unmatchedCloseContexts.length,
+        unmatchedCloseExamples: unmatchedCloseContexts.slice(0, 20)
+    };
+}
+
+/* Counterfactual diagnostic for local paren-font influence.
+   Only tests already-finalized blocks with >4px column residual, at least one local
+   parenthetical span, and no cross-column/page parenthesis scope. Temporarily overrides
+   only font metrics on .paren-text spans, measures, then restores exact inline styles.
+   This function must never leave any layout mutation behind. */
+function captureParenFontCounterfactualDiagnostics(container) {
+    const blocks = Array.from(container.querySelectorAll('.block-2col'));
+    let eligibleCount = 0, testedCount = 0, restoreMismatchCount = 0, errorCount = 0;
+    blocks.forEach(block => {
+        const right = block.querySelector('.right-col');
+        const left = block.querySelector('.left-col');
+        const spans = Array.from(block.querySelectorAll('.paren-text'));
+        const scope = (() => {
+            try { return JSON.parse(block.getAttribute('data-layout-paren-scope-diagnostic') || 'null'); }
+            catch (_) { return null; }
+        })();
+        const baseline = {
+            rightHeight: right?.scrollHeight ?? null,
+            leftHeight: left?.scrollHeight ?? null,
+            rightRectHeight: right ? Math.round(right.getBoundingClientRect().height * 1000) / 1000 : null,
+            leftRectHeight: left ? Math.round(left.getBoundingClientRect().height * 1000) / 1000 : null,
+            outerHeight: Math.round(block.getBoundingClientRect().height * 1000) / 1000
+        };
+        const diff = Number.isFinite(baseline.rightHeight) && Number.isFinite(baseline.leftHeight)
+            ? Math.abs(baseline.rightHeight - baseline.leftHeight) : null;
+        const localParenChars = ['right','left'].some(side =>
+            (scope?.[side]?.openCount || 0) + (scope?.[side]?.closeCount || 0) > 0);
+        const hasCrossBoundaryScope = (scope?.crossColumnScopeCountIntersectingBlock || 0) > 0 ||
+            (scope?.crossPageScopeCountIntersectingBlock || 0) > 0;
+        // A .block-2col wrapper can contain content in only one column (for example,
+        // a short terminal block). That is not a column-balance residual: changing the
+        // parenthesis font cannot meaningfully test a two-sided balance decision.
+        const bothColumnsHaveContent = baseline.rightHeight > 0 && baseline.leftHeight > 0;
+        const eligible = bothColumnsHaveContent && diff != null && diff > 4 &&
+            spans.length > 0 && localParenChars && !hasCrossBoundaryScope;
+        const diag = { version: 1, tested: false, reason: null, spanCount: spans.length, baseline, sameFont: null, restored: null, restoreMatches: null, error: null };
+        if (!right || !left) diag.reason = 'missing-column';
+        else if (!bothColumnsHaveContent) diag.reason = 'single-column-content';
+        else if (diff == null || diff <= 4) diag.reason = 'residual-not-over-4px';
+        else if (!localParenChars || spans.length === 0) diag.reason = 'no-local-parenthetical-style';
+        else if (hasCrossBoundaryScope) diag.reason = 'cross-boundary-scope-excluded';
+        else if (!eligible) diag.reason = 'not-eligible';
+        if (!eligible) {
+            block.setAttribute('data-layout-paren-font-counterfactual', JSON.stringify(diag));
+            return;
+        }
+        eligibleCount++;
+        const snapshots = spans.map(span => ({ span, style: span.getAttribute('style') }));
+        try {
+            // Match each span's surrounding paragraph metrics, while preserving its color/weight/etc.
+            spans.forEach(span => {
+                const p = span.closest('p');
+                if (!p) return;
+                const cs = getComputedStyle(p);
+                span.style.setProperty('font-family', cs.fontFamily, 'important');
+                span.style.setProperty('font-size', cs.fontSize, 'important');
+                span.style.setProperty('line-height', cs.lineHeight, 'important');
+            });
+            const sameFont = {
+                rightHeight: right.scrollHeight,
+                leftHeight: left.scrollHeight,
+                rightRectHeight: Math.round(right.getBoundingClientRect().height * 1000) / 1000,
+                leftRectHeight: Math.round(left.getBoundingClientRect().height * 1000) / 1000,
+                outerHeight: Math.round(block.getBoundingClientRect().height * 1000) / 1000
+            };
+            diag.tested = true;
+            diag.sameFont = sameFont;
+            diag.sameFontDiff = Math.abs(sameFont.rightHeight - sameFont.leftHeight);
+            diag.diffChange = diag.sameFontDiff - diff;
+        } catch (error) {
+            diag.error = String(error?.message || error);
+        } finally {
+            snapshots.forEach(({ span, style }) => {
+                if (style == null) span.removeAttribute('style');
+                else span.setAttribute('style', style);
+            });
+        }
+        // Force synchronous layout after restoring exact style attributes.
+        const restored = {
+            rightHeight: right.scrollHeight,
+            leftHeight: left.scrollHeight,
+            rightRectHeight: Math.round(right.getBoundingClientRect().height * 1000) / 1000,
+            leftRectHeight: Math.round(left.getBoundingClientRect().height * 1000) / 1000,
+            outerHeight: Math.round(block.getBoundingClientRect().height * 1000) / 1000
+        };
+        diag.restored = restored;
+        diag.restoreMatches = Object.keys(baseline).every(key =>
+            baseline[key] == null || restored[key] == null || Math.abs(baseline[key] - restored[key]) <= 0.5);
+        if (!diag.restoreMatches) restoreMismatchCount++;
+        if (diag.error) errorCount++;
+        testedCount++;
+        block.setAttribute('data-layout-paren-font-counterfactual', JSON.stringify(diag));
+    });
+    return { version: 1, blockCount: blocks.length, eligibleCount, testedCount, restoreMismatchCount, errorCount };
+}
+
 function applyCrossParagraphParens(container) {
     const allP = Array.from(container.querySelectorAll('p[data-raw-text]'));
     if (allP.length === 0) return;
 
+    // Square-bracket notes may span paragraphs, columns, or pages. Keep their depth
+    // across the ordered paragraph stream so a ')' inside such a note cannot close
+    // an outer parenthesis or change the styling of following paragraph fragments.
     let parenDepth = 0;  // עומק סוגריים פתוחות (מצטבר על פני פסקאות)
+    let squareBracketDepth = 0; // הערות בסוגריים מרובעים עשויות לחצות פסקאות/עמודים
 
     allP.forEach(p => {
         const rawText = p.getAttribute('data-raw-text') || '';
-        // ספור ( ו- ) בטקסט הגולמי של הפסקה — אבל התעלם מסוגריים שבתוך [...] (הערות שוליים)
+        // ספור ( ו- ) בטקסט הגולמי; מצב [...] נשמר בין פסקאות כדי לא לפרש
+        // סוגר בתוך הערה מרובת-פסקאות כסוגר שסוגר סוגריים עגולים חיצוניים.
         let openCount = 0, closeCount = 0;
-        let inBracket = false;
         for (const ch of rawText) {
-            if (ch === '[') { inBracket = true; continue; }
-            if (ch === ']') { inBracket = false; continue; }
-            if (inBracket) continue;
+            if (ch === '[') { squareBracketDepth++; continue; }
+            if (ch === ']') { squareBracketDepth = Math.max(0, squareBracketDepth - 1); continue; }
+            if (squareBracketDepth > 0) continue;
             if (ch === '(') openCount++;
             else if (ch === ')') closeCount++;
         }
@@ -4197,6 +6012,7 @@ function markInsideParenParagraphs(sections) {
     const insideParenMap = {};  // token.id → insideParen (ל-createDropWord)
     const willParenWrapMap = {};  // token.id → willParenWrap (למדידה)
     let parenDepth = 0;
+    let squareBracketDepth = 0; // מצב הערת [...] נשמר בין טוקנים ופסקאות
 
     sections.forEach(sec => {
         if (!sec.tokens) return;
@@ -4204,11 +6020,10 @@ function markInsideParenParagraphs(sections) {
             if (tok.type !== 'p') return;
             const text = tok.text || '';
             let openCount = 0, closeCount = 0;
-            let inBracket = false;
             for (const ch of text) {
-                if (ch === '[') { inBracket = true; continue; }
-                if (ch === ']') { inBracket = false; continue; }
-                if (inBracket) continue;
+                if (ch === '[') { squareBracketDepth++; continue; }
+                if (ch === ']') { squareBracketDepth = Math.max(0, squareBracketDepth - 1); continue; }
+                if (squareBracketDepth > 0) continue;
                 if (ch === '(') openCount++;
                 else if (ch === ')') closeCount++;
             }

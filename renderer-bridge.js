@@ -123,12 +123,29 @@
     // הזרקת טקסט מהדף הראשי
     let __typesetQueue = Promise.resolve();   // [V22] הודעות עימוד מטופלות בתור, כמו שהיה כשהטיפול היה סינכרוני
 
+    /* [מ-main/V23] טעינת כל הגופנים לפני המדידה הראשונה. בלי זה גופנים (כולל תת-קבוצות unicode-range) נטענים רק אחרי
+       שהטקסט העברי כבר ב-DOM, באמצע החלטות העימוד. EngineInputs.runUntilFontsStable (V22) נשאר כרשת ביטחון:
+       אם גופן בכל זאת נטען באמצע, העימוד רץ שוב והדוח מציג אותו ב-lateFonts. */
+    async function preflightFonts() {
+        if (!document.fonts) return null;
+        const faces = Array.from(document.fonts);
+        const results = await Promise.all(faces.map(async face => {
+            try { await face.load(); return { family: face.family, weight: face.weight, style: face.style, status: face.status }; }
+            catch (err) { return { family: face.family, weight: face.weight, style: face.style, status: 'error', error: String((err && err.message) || err) }; }
+        }));
+        await document.fonts.ready;
+        window.__fontPreflight = { faceCount: results.length, loaded: results.filter(r => r.status === 'loaded').length,
+            failed: results.filter(r => r.status === 'error').length, failures: results.filter(r => r.status === 'error').slice(0, 20) };
+        return window.__fontPreflight;
+    }
+
     /* [V22] גוף העימוד כפונקציה אחת — משמש גם את 'typeset' וגם את 'diagnose' (עימוד מחדש של הקלט האחרון עם יומן) */
     async function runTypesetMsg(msg) {
         applySettings(msg.settings);
         applyText(msg.text);
         if (typeof updateGrid === 'function') updateGrid();
         if (typeof updateStyles === 'function') updateStyles();
+        const preflight = await preflightFonts();   // כל הגופנים נטענים לפני המדידה הראשונה
         let report = {};
         const traceOn = !!(msg.trace && window.EngineTrace);   // יומן החלטות — אופציונלי, כבוי כברירת מחדל
         try {
@@ -142,6 +159,7 @@
         } finally {
             if (window.EngineTrace && EngineTrace.isEnabled()) EngineTrace.disable();
         }
+        report.fontPreflight = preflight;
         if (window.EngineInputs) {
             report.textHash = EngineInputs.fnv(msg.text || '');
             report.cssVarsHash = EngineInputs.fnv(document.documentElement.getAttribute('style') || '');
@@ -164,7 +182,7 @@
     }
 
     // האזנה להודעות מהדף הראשי
-    window.addEventListener('message', function(e) {
+    window.addEventListener('message', async function(e) {
         const msg = e.data;
         if (!msg || !msg.type) return;
 
