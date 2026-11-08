@@ -9,6 +9,11 @@ on:
   pull_request:
     branches: [V22]
   workflow_dispatch:
+    inputs:
+      base_ref:
+        description: 'A/B: commit or branch to compare the current ref against (leave empty to skip)'
+        required: false
+        default: ''
 
 concurrency:
   group: v22-checks-${{ github.ref }}
@@ -119,4 +124,45 @@ jobs:
         if: always()
         with:
           name: ab-report
+          path: artifacts/
+
+  ab-vs-ref:
+    name: A/B against a given ref (manual)
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.base_ref != ''
+    needs: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: head
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.base_ref }}
+          path: base
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install puppeteer-core
+        run: npm install --no-save puppeteer-core
+      - name: A/B on a series of small setting variants
+        run: |
+          mkdir -p artifacts
+          node head/scripts/layout-ab.mjs --a base --b head --text head/mid_long_test_text.txt --lines 600 --variants 3 --audit head/geometry-audit.js,head/geometry-audit-extra.js 2>&1 | tee artifacts/ab.txt
+      - name: Publish result as an annotation (readable through the API)
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import io
+          def esc(s): return s.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          try:
+              txt = io.open('artifacts/ab.txt', encoding='utf-8').read()
+          except Exception as e:
+              txt = 'missing: ' + str(e)
+          print('::notice title=ab-vs-ref::' + esc(txt[:6000]))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ab-vs-ref-report
           path: artifacts/
