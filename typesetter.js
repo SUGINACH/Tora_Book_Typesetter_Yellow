@@ -22,6 +22,13 @@ function stripEditorialNotes(text) {
     return text.replace(/##[\s\S]*?##/g, '').replace(/[ \t]{2,}/g, ' ').replace(/\s+([,.:;!?])/g, '$1').trim();
 }
 
+/* [תיקון אבטחה] escape לטקסט שמקורו במסמך המשתמש לפני הזרקה ל-innerHTML.
+   טקסט המסמך מגיע מקובץ שהוזן/יובא — בלי escape, שורה כמו "כותרת 2 - <img src=x onerror=...>"
+   מוזרקת כ-HTML לעמודים המעומדים ולקובץ ה-HTML המיוצא. */
+function escapeHtmlText(s) {
+    return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 /* מספור עמודים משותף - כדי ששער משנה (אם יוגדר להציג מספר) ישתמש
    באותו פורמט/מסגרת/עמוד-התחלה בדיוק כמו עמודי תוכן רגילים */
 function formatPageNumberDisplay(pNum) {
@@ -29,10 +36,14 @@ function formatPageNumberDisplay(pNum) {
     const pageNumFormat = EngineInputs.el('page-num-format')?.value || 'gematria';
     const pageNumFrame = EngineInputs.el('page-num-frame')?.value || 'none';
     const startIdx = parseInt(EngineInputs.el('page-num-start-idx')?.value, 10) || 1;
+    /* [תיקון] חיבור "ערך המספר הראשון" (page-num-initial-value) — השדה הוגדר ב-UI כ"קריטי לכרכים
+       מאוחרים" אבל שום קוד לא קרא אותו. ברירת המחדל 1 שומרת על ההתנהגות הקיימת. */
+    const initValRaw = parseInt(EngineInputs.el('page-num-initial-value')?.value, 10);
+    const initVal = Number.isFinite(initValRaw) && initValRaw > 0 ? initValRaw : 1;
 
     let displayPageNum = '';
     if (pageNumPos !== 'none' && pNum >= startIdx) {
-        const effectiveNum = pNum - startIdx + 1;
+        const effectiveNum = pNum - startIdx + initVal;
         if (pageNumFormat === 'gematria') {
             displayPageNum = toGematria(effectiveNum);
         } else if (pageNumFormat === 'page_gematria') {
@@ -58,6 +69,13 @@ function toGematria(num) {
         return "טו";
     if (num === 16)
         return "טז";
+    /* [תיקון] מספרים מעל 999: חלק האלפים בגימטריה + גרש (כמו בשנים עבריות, למשל 5786 → ה׳תשפו).
+       בלי טיפול האלפים הושמטו בשקט והוחזר ערך שגוי (1015 → "טו") או מחרוזת ריקה (1500 → ""). */
+    if (num >= 1000) {
+        const thousands = toGematria(Math.floor(num / 1000));
+        const rest = num % 1000;
+        return thousands + "׳" + (rest > 0 ? toGematria(rest) : "");
+    }
     const hundreds = ["", "ק", "ר", "ש", "ת", "תק", "תר", "תש", "תת", "תתק"];
     const tens = ["", "י", "כ", "ל", "מ", "נ", "ס", "ע", "פ", "צ"];
     const ones = ["", "א", "ב", "ג", "ד", "ה", "ו", "ז", "ח", "ט"];
@@ -177,6 +195,9 @@ function updateStyles() {
     // גוף הטקסט, מילה ראשונה וריווח שורות
     root.style.setProperty('--fn-body', EngineInputs.el('font-body')?.value || 'serif');
     root.style.setProperty('--sz-body', (EngineInputs.el('size-body')?.value || 11.2) + 'pt');
+    /* [תיקון] חיבור "יישור שורה אחרונה": style.css קורא var(--last-line-align) ב-p.p-end,
+       אבל שום קוד לא הזרים את הערך מה-select — ההגדרה הייתה מתה. */
+    root.style.setProperty('--last-line-align', EngineInputs.el('body-last-line-align')?.value || 'center');
     root.style.setProperty('--line-height-body', EngineInputs.el('line-height-body')?.value || '1.34');
     root.style.setProperty('--fn-first-word', EngineInputs.el('font-first-word')?.value || 'serif');
     root.style.setProperty('--sz-first-word', (EngineInputs.el('size-first-word')?.value || 1.5) + 'em');
@@ -645,7 +666,7 @@ function buildHeaderGridHTML(pNum, h1Title, h2Title, h3Title, bookTitle, customR
         return `<span class="hdr-txt">${html}</span>`;
     };
     const hdrRHTML = wrapHdrText(renderHeaderSectionHTML(hdrRType, cR, h1Title, h2Title, h3Title, bookTitle, tocFallback, contextExtra), hdrRType);
-    const hdrCHTML = wrapHdrText(renderHeaderSectionHTML(hdrCType, customC, h1Title, h2Title, h3Title, bookTitle, tocFallback, contextExtra), hdrCType);
+    const hdrCHTML = wrapHdrText(renderHeaderSectionHTML(hdrCType, cC, h1Title, h2Title, h3Title, bookTitle, tocFallback, contextExtra), hdrCType);
     const hdrLHTML = wrapHdrText(renderHeaderSectionHTML(hdrLType, cL, h1Title, h2Title, h3Title, bookTitle, tocFallback, contextExtra), hdrLType);
 
     // [חדש] "מיקום מספור: משולב בכותרת עליונה חיצונית" - מספר העמוד נכנס לפס הכותרת בפינה החיצונית
@@ -681,7 +702,7 @@ function createPageLayout(container, h2Text, h2TokenId, pNum, h1Title, h2Title, 
     <div class="page-content-wrapper">
       ${headerGridHTML}
       <div class="page-body-flow ${h2Text ? 'h2-flow-page' : ''}">
-        ${h2Text ? `<div class="h2-spacer"></div><div class="title-level-2-standalone" ${h2TokenId !== undefined ? `data-token-id="${h2TokenId}" id="heading-tok-${h2TokenId}"` : ''}>${h2Text}</div>` : ''}
+        ${h2Text ? `<div class="h2-spacer"></div><div class="title-level-2-standalone" ${h2TokenId !== undefined ? `data-token-id="${h2TokenId}" id="heading-tok-${h2TokenId}"` : ''}>${escapeHtmlText(h2Text)}</div>` : ''}
       </div>
       <div class="page-number-footer ${footerClass}">${showFooter ? framedPageNum : ''}</div>
     </div>
@@ -837,12 +858,15 @@ function rollbackTrailingHeadings(col) {
 
 /* מספר השורות המרבי של פסקה שנכנס בטור (נמדד בפועל, כולל סימוני הערות ועיצוב תוחמים).
    getAvail(testText) מחזיר את הגובה הפנוי עבור קטע הטקסט הנבדק (כולל שטח להערות שהוא מכניס). */
-function computeBestFitLine(pElem, targetCol, lines, isContinuation, hasWindow, getAvail, withEndMarker = false) {
+function computeBestFitLine(pElem, targetCol, lines, isContinuation, hasWindow, getAvail, withEndMarker = false, insideParen = false) {
     let best = 0;
     for (let i = 1; i <= lines.length; i++) {
         const testText = lines.slice(0, i).join(' ');
         pElem.className = (i === lines.length) ? 'p-end' : 'p-cut';
-        pElem.innerHTML = createDropWord(testText, isContinuation, !hasWindow, lines.length);
+        /* [תיקון] מעבירים גם insideParen למדידה: הרינדור הסופי (שורות 4599/4848) משמיט את
+           חלון המילה הראשונה בפסקה בתוך סוגריים פתוחות — בלי זה המדידה כללה חלון שלא נכנס
+           לפריסה הסופית, ו-bestFitLine היה נמוך מהנדרש (פיצול פסקאות מוקדם מדי). */
+        pElem.innerHTML = createDropWord(testText, isContinuation, !hasWindow, lines.length, insideParen);
         applyDelimiterStyles(pElem, 'body', getBodySizePt(), true);
         // [תיקון] בבדיקת הפסקה כולה גם סימון הערת הסיום שיוצמד לסופה תופס מקום (ראו createDryEndNoteMarker)
         if (withEndMarker && i === lines.length) pElem.appendChild(createDryEndNoteMarker());
@@ -3443,13 +3467,13 @@ function renderPaginatedTOC(container, entries, titleText, bookTitle, h1Title, p
 
             let itemHTML = '';
             if (it.isGroup) {
-                const inlineSpans = it.items.map(grp => `<span class="grp-item grp-lvl-${grp.level}" style="${getTocStyle(grp.level)}"><a href="#heading-tok-${grp.id}" style="text-decoration: none; color: inherit; outline: none;"><span class="grp-title">${grp.text}</span> - <span class="grp-page" data-target-id="${grp.id}"></span></a></span>`).join('<span class="grp-sep">|</span>');
+                const inlineSpans = it.items.map(grp => `<span class="grp-item grp-lvl-${grp.level}" style="${getTocStyle(grp.level)}"><a href="#heading-tok-${grp.id}" style="text-decoration: none; color: inherit; outline: none;"><span class="grp-title">${escapeHtmlText(grp.text)}</span> - <span class="grp-page" data-target-id="${grp.id}"></span></a></span>`).join('<span class="grp-sep">|</span>');
                 itemHTML = `<div class="toc-entry-group"><div class="toc-grouped-block">${inlineSpans}</div></div>`;
             } else {
                 itemHTML = `
           <div class="toc-entry-group" style="${getTocStyle(it.level)}">
             <a href="#heading-tok-${it.id}" class="toc-item toc-lvl-${it.level}" style="text-decoration: none; color: inherit; outline: none;">
-              <span class="toc-title">${it.text}</span>
+              <span class="toc-title">${escapeHtmlText(it.text)}</span>
               <span class="toc-dots"></span>
               <span class="toc-page-num" data-target-id="${it.id}"></span>
             </a>
@@ -4568,7 +4592,7 @@ function typesetDocumentCore() {
                         }
 
                         let bestFitLine = computeBestFitLine(pElem, targetCol, lines, isContinuation, hasWindow,
-                            (txt) => remPageHeight - reservedNow(txt));
+                            (txt) => remPageHeight - reservedNow(txt), false, isInsideParenToken(currentTok));
 
                         // [תיקון] החלטת חיתוך אחת לכל הכללים: אין שורה בודדת בתחילת/סוף חיתוך, וכותרות לא נשארות לבדן
                         const placeLines = resolveParagraphSplit(lines.length, bestFitLine);
@@ -4705,6 +4729,8 @@ function typesetDocumentCore() {
 
                     headingPageMap[peekTok.id] = toGematria(pageIndex - 1);
                     remPageHeight = Math.max(0, flowBottom - spanBlock.getBoundingClientRect().bottom);
+                    pageBodyHasContent = true;   /* [תיקון] גם כותרת רוחבית היא תוכן גוף: כותרת span נוספת באותו עמוד
+                       חייבת לעמוד בכלל ה-45px, אחרת היא נשארת יתומה בתחתית העמוד — בדיוק המצב שהתנאי בנוי למנוע */
                     tokenIndex++;
                     continue;
                 }
@@ -4817,7 +4843,7 @@ function typesetDocumentCore() {
                             }
 
                             let bestFitLine = computeBestFitLine(pElem, targetCol, lines, isContinuation, hasWindow,
-                                (txt) => remPageHeight - reservedNow(txt));
+                                (txt) => remPageHeight - reservedNow(txt), false, isInsideParenToken(currentTok));
 
                             // [תיקון] החלטת חיתוך אחת לכל הכללים: אין שורה בודדת בתחילת/סוף חיתוך, וכותרות לא נשארות לבדן
                             const placeLines = resolveParagraphSplit(lines.length, bestFitLine);

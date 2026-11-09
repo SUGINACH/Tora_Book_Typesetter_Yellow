@@ -1143,6 +1143,12 @@ function auditWidowOrphan(node, issues) {
                 const lastEl = _nodeToEl.get(last);
                 const splitAttr = name => lastEl?.getAttribute(name) ?? null;
                 const cs = lastEl ? getComputedStyle(lastEl) : null;
+                /* [תיקון קריטי] balanceFallback/balanceFallbackSparseLine לא היו מוגדרים בתחום הזה —
+                   הם מוגדרים רק ב-auditSparseLastLine. בכל מסמך עם ממצא יתום, ה-shorthand
+                   { balanceFallback } זרק ReferenceError והפיל את כל הבדיקה. */
+                const balanceBlock = lastEl?.closest('.block-2col') || null;
+                const balanceFallback = balanceBlock?.getAttribute('data-layout-balance-fallback') || null;
+                const balanceFallbackSparseLine = balanceBlock?.getAttribute('data-layout-balance-fallback-sparse-line') || null;
                 issues.push({
                     kind: 'orphan',
                     severity: 'medium',
@@ -1233,6 +1239,10 @@ function auditSparseLastLine(node, issues) {
                     lastW: Math.round(lastLine.w),
                     firstW: Math.round(firstLine.w),
                     pText: node.text,
+                    /* [תיקון] השדות חושבו אב לא צורפו לממצא — השער ב-geometry-audit-long.yml
+                       (issue.balanceFallback === 'full-width-terminal-residual') לא יכול היה להדליק לעולם. */
+                    balanceFallback,
+                    balanceFallbackSparseLine,
                     firstLine: compactLine(firstLine),
                     lastLine: compactLine(lastLine),
                     splitDiagnostics: {
@@ -2119,6 +2129,12 @@ function buildNodeWithRefs(el, parent) {
         rect,
         children: [],
         lines: [],
+        /* [תיקון] שדות זהות הטוקן — היו קיימים רק ב-buildNode המת (extractGeometry שאינו מיוצא).
+           בלעדיהם כלל האלמנה (first.isContinuation) לא יכול היה להדליק לעולם, וממצאי
+           יתום/אי-איזון איבדו את זיהוי הטוקן. */
+        tokenId: el.getAttribute('data-token-id') || null,
+        isContinuation: el.getAttribute('data-is-cont') === 'true',
+        rawText: (el.getAttribute('data-raw-text') || '').slice(0, 160),
         footnoteReflowMetrics: cls.type === 'page' ? {
             queueCount: el.getAttribute('data-fn-reflow-queue-count'),
             predictedHeight: el.getAttribute('data-fn-reflow-predicted-height'),

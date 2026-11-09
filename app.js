@@ -609,11 +609,13 @@ function refreshCustomThemesUI() {
         if (customThemes.length === 0) {
             listContainer.innerHTML = '<div style="font-size:7.5pt; color:#888;">עדיין לא הוטמעו ערכות מותאמות אישית.</div>';
         } else {
+            /* [תיקון אבטחה] escape לשם הערכה — שם חופשי מהמשתמש/מקובץ מיובא שהוזרק ל-innerHTML */
+            const escHtml = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             let html = '<div style="font-size:8pt; font-weight:700; margin-bottom:4px; color:#333;">ערכות שהוטמעו בקובץ:</div>';
             customThemes.forEach(t => {
                 html += `
           <div style="display:flex; justify-content:space-between; align-items:center; background:#fff; border:1px solid #ddd; padding:3px 6px; border-radius:3px; margin-bottom:3px; font-size:8pt;">
-            <span>🏷️ ${t.name}</span>
+            <span>🏷️ ${escHtml(t.name)}</span>
             <span style="color:#dc2626; cursor:pointer; font-weight:bold;" onclick="deleteCustomTheme('${t.id}')">🗑️ מחק</span>
           </div>
         `;
@@ -717,14 +719,16 @@ function buildExtPanel(kind, instanceId, name, def) {
     panel.className = 'panel-static';
     panel.id = instanceId + '-panel';
     const icon = kind === 'pageType' ? '📄' : kind === 'textStyle' ? '🅰️' : '🖼️';
+    /* [תיקון אבטחה] escape לשם ולטריגרים — הם מגיעים מקובץ JSON חיצוני שהמשתמש מייבא */
+    const escHtml = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     let triggerInfo = '';
     if (kind === 'textStyle' && def && def.trigger) {
-        triggerInfo = (def.trigger.type === 'delimiterPair') ? `<div style="font-size:7.5pt;color:#888;">טריגר: בין "${def.trigger.open}" ל-"${def.trigger.close}"</div>` : `<div style="font-size:7.5pt;color:#888;">קידומת: "${def.trigger.prefix}"</div>`;
+        triggerInfo = (def.trigger.type === 'delimiterPair') ? `<div style="font-size:7.5pt;color:#888;">טריגר: בין "${escHtml(def.trigger.open)}" ל-"${escHtml(def.trigger.close)}"</div>` : `<div style="font-size:7.5pt;color:#888;">קידומת: "${escHtml(def.trigger.prefix)}"</div>`;
     }
     const anchorRow = (kind !== 'textStyle') ? `<div class="inline-cfg-row"><label>מיקום:</label><select id="${instanceId}-anchor" onchange="updateExtAnchor('${kind}','${instanceId}', this.value)">${EXT_ANCHOR_OPTIONS.map(([v,l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>` : '';
     panel.innerHTML = `
     <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
-      <span>${icon} ${name}</span>
+      <span>${icon} ${escHtml(name)}</span>
       <span style="cursor:pointer;color:#a33;font-weight:700;" onclick="removeExtInstance('${kind}','${instanceId}')">✕ הסר</span>
     </div>
     ${triggerInfo}
@@ -1228,27 +1232,36 @@ async function handleAssetsFolderSelected(event) {
         try {
             if (kind === 'divider') {
                 registerExternalDivider(id, content);
-                appendOptionToSelect('section-divider-style', id, baseName, 'מתיקייה', 'sec-div-folder-optgroup');
+                /* [תיקון] העברת ה-optgroup הנכון מ-index.html (sec-div-folder-opt) — המזהה
+                   שהועבר כאן (sec-div-folder-optgroup) לא היה קיים, ונוצרה קבוצה כפולה. */
+                appendOptionToSelect('section-divider-style', id, baseName, 'מתיקייה', 'sec-div-folder-opt');
             } else if (kind === 'header') {
                 registerExternalHeader(id, content);
-                ['hdr-r-type', 'hdr-c-type', 'hdr-l-type', 'hdr-verso-r-type', 'hdr-verso-c-type', 'hdr-verso-l-type']
-                    .forEach(sel => appendOptionToSelect(sel, id, baseName, 'מתיקייה'));
+                /* [תיקון] העברת מזהי ה-optgroups הקיימים במקום יצירת קבוצת "מתיקייה" גנרית כפולה */
+                appendOptionToSelect('hdr-r-type', id, baseName, 'מתיקייה', 'hdr-r-folder-opt');
+                appendOptionToSelect('hdr-c-type', id, baseName, 'מתיקייה', 'hdr-c-folder-opt');
+                appendOptionToSelect('hdr-l-type', id, baseName, 'מתיקייה', 'hdr-l-folder-opt');
+                appendOptionToSelect('hdr-verso-r-type', id, baseName, 'מתיקייה', 'hdr-vr-folder-opt');
+                appendOptionToSelect('hdr-verso-c-type', id, baseName, 'מתיקייה', 'hdr-vc-folder-opt');
+                appendOptionToSelect('hdr-verso-l-type', id, baseName, 'מתיקייה', 'hdr-vl-folder-opt');
             } else if (kind === 'updown') {
                 registerExternalAllOrnament(id, content);
-                appendOptionToSelect('h2-ornament-top-style', id, baseName, 'מתיקייה');
-                appendOptionToSelect('h2-ornament-bottom-style', id, baseName, 'מתיקייה');
+                appendOptionToSelect('h2-ornament-top-style', id, baseName, 'מתיקייה', 'h2-top-folder-opt');
+                appendOptionToSelect('h2-ornament-bottom-style', id, baseName, 'מתיקייה', 'h2-btm-folder-opt');
             } else if (kind === 'leftright') {
                 registerExternalAllOrnament(id, content);
                 if (typeof ORNAMENTS_LR !== 'undefined') ORNAMENTS_LR[id] = { svg: content, name: baseName };
-                ['h3-ornament-r', 'h3-ornament-l', 'h2-title-ornament-r', 'h2-title-ornament-l']
-                    .forEach(sel => appendOptionToSelect(sel, id, baseName, 'מתיקייה'));
+                appendOptionToSelect('h3-ornament-r', id, baseName, 'מתיקייה', 'h3-r-folder-opt');
+                appendOptionToSelect('h3-ornament-l', id, baseName, 'מתיקייה', 'h3-l-folder-opt');
+                appendOptionToSelect('h2-title-ornament-r', id, baseName, 'מתיקייה');
+                appendOptionToSelect('h2-title-ornament-l', id, baseName, 'מתיקייה');
             } else if (kind === 'noterule') {
                 registerExternalNoteRule(id, content);
-                appendOptionToSelect('note-rule-style', id, baseName, 'מתיקייה');
+                appendOptionToSelect('note-rule-style', id, baseName, 'מתיקייה', 'note-rules-folder-opt');
             } else if (kind.startsWith('shaar_')) {
                 const t = kind.split('_')[1];
                 registerExternalShaar(t, id, baseName, content);
-                appendOptionToSelect(`select-shaar-${t}`, id, baseName, 'מתיקייה');
+                appendOptionToSelect(`select-shaar-${t}`, id, baseName, 'מתיקייה', `shaar-${t}-folder-optgroup`);
             }
             loaded++;
         } catch (e) {}
@@ -1352,6 +1365,10 @@ async function loadExternalJSONAssets() {
                     appendOptionToSelect('hdr-c-type', item.id, item.name, 'עיטורי כותרת מ-JSON', 'hdr-c-json-optgroup');
                     appendOptionToSelect('hdr-r-type', item.id, item.name, 'עיטורי כותרת מ-JSON', 'hdr-r-json-optgroup');
                     appendOptionToSelect('hdr-l-type', item.id, item.name, 'עיטורי כותרת מ-JSON', 'hdr-l-json-optgroup');
+                    /* [תיקון] גם לבוררי ה-Verso — הקבוצות "עיטורים מ-JSON" שלהם נשארו ריקות לנצח */
+                    appendOptionToSelect('hdr-verso-r-type', item.id, item.name, 'עיטורים מ-JSON', 'hdr-verso-r-json-optgroup');
+                    appendOptionToSelect('hdr-verso-c-type', item.id, item.name, 'עיטורים מ-JSON', 'hdr-verso-c-json-optgroup');
+                    appendOptionToSelect('hdr-verso-l-type', item.id, item.name, 'עיטורים מ-JSON', 'hdr-verso-l-json-optgroup');
                 } else if (asset.type === 'divider') {
                     registerExternalDivider(item.id, item.svg);
                     appendOptionToSelect('section-divider-style', item.id, item.name, 'עיטורי סיום מ-JSON', 'sec-div-json-optgroup');
@@ -1926,7 +1943,7 @@ async function exportRenderedHTML() {
             }
         }
 
-        let cssText = cssContents.join('\\n\\n');
+        let cssText = cssContents.join('\n\n');
         for (const font of embeddedFonts) {
             const file = font.file;
             const dataUrl = 'url("' + font.base64 + '")';
@@ -2063,17 +2080,11 @@ function initTabSystem() {
         <div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap;">
             <button id="btn-seeded" class="btn-tool btn-secondary" style="flex:1;" title="טקסט קבוע">📋 מסמך קבוע</button>
             <button id="btn-random" class="btn-tool btn-secondary" style="flex:1;" title="טקסט רנדומלי">🎲 מסמך רנדומלי</button>
-            <button id="btn-report-window" class="btn-tool btn-secondary" style="flex:1;" title="דוח עימוד בחלון נפרד">📊 דוח עימוד</button>
         </div>
         <div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap;">
             <button id="btn-retypeset-debug" class="btn-tool btn-primary" style="flex:1;" title="עדכן ועמד מחדש">⚡ עדכן ועמד מחדש</button>
             <button id="btn-import-debug" class="btn-tool btn-import" style="flex:1;" title="ייבוא טקסט">📄 ייבוא טקסט</button>
             <input type="file" id="file-import-debug" accept=".txt,.text,.md" style="display:none;">
-        </div>
-        <div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap;">
-            <button id="btn-refresh-debug" class="btn-tool btn-secondary" style="flex:0.5;" title="רענן דוח">🔄 רענן</button>
-            <button id="btn-export-marked" class="btn-tool btn-primary" style="flex:1;" title="ייצא HTML ממורקר">💾 ייצוא HTML ממורקר</button>
-            <button id="btn-toggle-trace" class="btn-tool btn-secondary" style="flex:1;" title="מעקב אחרי קריאות פונקציות">🔍 מעקב פונקציות</button>
         </div>
         <div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap;">
             <button id="btn-fn-audit" class="btn-tool btn-secondary" style="flex:1;" title="השוואת תחזית מדידת הערות מול גובה אמיתי">📏 בדיקת מדידת הערות</button>
@@ -2147,26 +2158,14 @@ function initTabSystem() {
             }
         });
     }
-    const btnReport = document.getElementById('btn-report-window');
-    if (btnReport && typeof generateLayoutReport === 'function') {
-        btnReport.addEventListener('click', function() { generateLayoutReport(); });
-    }
     const btnRetypesetDbg = document.getElementById('btn-retypeset-debug');
     if (btnRetypesetDbg) {
         btnRetypesetDbg.addEventListener('click', function() { typesetDocument(); });
     }
-    const btnRefreshDbg = document.getElementById('btn-refresh-debug');
-    if (btnRefreshDbg && typeof refreshDebugReport === 'function') {
-        btnRefreshDbg.addEventListener('click', function() { refreshDebugReport(); });
-    }
-    const btnExportMarked = document.getElementById('btn-export-marked');
-    if (btnExportMarked && typeof exportMarkedHTML === 'function') {
-        btnExportMarked.addEventListener('click', function() { exportMarkedHTML(); });
-    }
-    const btnToggleTrace = document.getElementById('btn-toggle-trace');
-    if (btnToggleTrace && typeof toggleTraceView === 'function') {
-        btnToggleTrace.addEventListener('click', function() { toggleTraceView(); });
-    }
+    /* [תיקון] הוסרו הכפתורים המתים: דוח עימוד / רענן / ייצוא HTML ממורקר / מעקב פונקציות.
+       הם היו חלק מארכיטקטורת קדם-iframe (debug-panel.js / trace-manager.js כבר לא נטענים
+       בשום דף, ו-refreshDebugReport/toggleTraceView לא הוגדרו בשום קובץ) והוחלפו
+       בכלי הגשר העובדים: 🩺 דוח אבחון ו📐 גיאומטריה. */
     // [חדש — מהימנות מדידה] כפתורי בדיקת מדידת הערות
     const btnFnAudit = document.getElementById('btn-fn-audit');
     if (btnFnAudit) {
@@ -2402,9 +2401,13 @@ function collectAllSettingsForRenderer() {
     // [חדש] תיבות סימון של תוכן עניינים (gtoc-show, gtoc-grp, dtoc-show, dtoc-grp)
     // אלו checkboxים שמשתמשים ב-class + value במקום ב-ID, ולכן לא נאספים למעלה.
     // אוספים אותם כמערכים מופרדים בפסיקים: "1,2,3" = כותרות 1,2,3 מסומנות.
+    /* [תיקון] מיפוי מפורש שם→מפתח: תיבות ה-*-grp נשלחו כ-gtoc-grps/dtoc-grps, אב
+       הגשר (renderer-bridge.js) והמנוע (typesetter.js) מצפים ל-gtoc-groups/dtoc-groups —
+       ולכן קיבוץ תוכן העניינים לא הופיע לעולם בפלט המעומד. */
+    const TOC_KEY_BY_CLASS = { 'gtoc-show': 'gtoc-shows', 'gtoc-grp': 'gtoc-groups', 'dtoc-show': 'dtoc-shows', 'dtoc-grp': 'dtoc-groups' };
     ['gtoc-show', 'gtoc-grp', 'dtoc-show', 'dtoc-grp'].forEach(cls => {
         const checked = Array.from(document.querySelectorAll('.' + cls + ':checked')).map(cb => cb.value);
-        settings[cls + 's'] = checked.join(',');
+        settings[TOC_KEY_BY_CLASS[cls]] = checked.join(',');
     });
     return settings;
 }
@@ -2862,16 +2865,20 @@ window.onload = async function() {
     if (window.__isRenderer) return;
 
     initFontPickers();
+    /* [תיקון] סדר טעינה: נכסי JSON/תיקיות לפני החלת ההגדרות. ברירת המחדל
+       "active-theme-select": "json_theme_40" הוחלה כשה-select עוד הכיל רק את
+       הערכות המובנות — השמת ערך שאינו קיים ב-select היא פעולה ריקה, והאפליקציה
+       נפתחה ב-builtin_1 במקום בערכה מה-JSON. גם סטים שמורים שמשתמשים במזהי
+       נכסים (עיטורים/מחיצות מ-JSON) הוחלו לפני שהאפשרויות נוצרו. */
+    await loadExternalJSONAssets();
+    await loadFolderAssetsAndThemes();
+    refreshCustomThemesUI();
+    rehydrateExtImports();
     // טען הגדרות ברירת מחדל מ-default_settings.json דרך settings-manager.js
     // חשוב: default_settings.json כעת מכיל את ברירת המחדל של עדכון_ממשק_9 (שמות גופנים אנגליים)
     if (typeof loadDefaultSettings === 'function') {
         await loadDefaultSettings();
     }
-    refreshCustomThemesUI();
-    rehydrateExtImports();
-
-    await loadExternalJSONAssets();
-    await loadFolderAssetsAndThemes();
     // תיקון (2026-10-16): loadExternalFonts טוען 1754 גופנים — חוסם את window.onload.
     // מריצים ברקע בלי לחכות.
     loadExternalFonts();

@@ -103,15 +103,19 @@ function collectCurrentSettings() {
     // [חדש] אסוף תיבות סימון של תוכן עניינים (class-based, לא ID-based)
     // בדף הראשי: אוספים מה-checkboxים המסומנים
     // ב-iframe: אין checkboxים, אז קוראים מה-hidden input שמכיל את הערך המופרד בפסיקים
-    ['gtoc-show', 'gtoc-grp', 'dtoc-show', 'dtoc-grp'].forEach(function(cls) {
+    /* [תיקון] מפתחות ממופים לשמות שהמנוע והגשר מצפים להם (gtoc-groups/dtoc-groups),
+       לא gtoc-grps/dtoc-grps — אחרת הקיבוץ לא הועבר מעולם והייצוא/הייבוא איבדו אותו. */
+    var TOC_KEY_BY_CLASS = { 'gtoc-show': 'gtoc-shows', 'gtoc-grp': 'gtoc-groups', 'dtoc-show': 'dtoc-shows', 'dtoc-grp': 'dtoc-groups' };
+    Object.keys(TOC_KEY_BY_CLASS).forEach(function(cls) {
+        var key = TOC_KEY_BY_CLASS[cls];
         var checked = Array.from(document.querySelectorAll('.' + cls + ':checked')).map(function(cb) { return cb.value; });
         if (checked.length > 0) {
-            settings[cls + 's'] = checked.join(',');
+            settings[key] = checked.join(',');
         } else {
-            // ב-iframe — קרא מה-hidden input
-            var hidden = document.getElementById(cls + 's');
+            // ב-iframe — קרא מה-hidden input (נוצר ע"י renderer-bridge.js עם אותם שמות מפתח)
+            var hidden = document.getElementById(key);
             if (hidden) {
-                settings[cls + 's'] = hidden.value;
+                settings[key] = hidden.value;
             }
         }
     });
@@ -169,18 +173,32 @@ function initStyleSetDropdown() {
     // טען רשימת סגנונות
     loadStyleSetsList();
 
+    /* [תיקון] שקף את הבחירה השמורה — loadDefaultSettings ניסה לעדכן את הדרופדאון
+       עוד לפני שנוצר, והמשתמש ראה "— ברירת מחדל —" גם כשסט שמור הוחל בפועל. */
+    var savedSelect = document.getElementById('style-set-select');
+    if (savedSelect) {
+        try { savedSelect.value = localStorage.getItem('selected_style_set') || ''; } catch (e) { /* localStorage לא זמין */ }
+    }
+
     // חבר לחצנים
     document.getElementById('style-set-select').addEventListener('change', function() {
-        if (this.value) {
-            // שמור את הבחירה ב-localStorage, נקה הגדרות מיובאות
-            localStorage.setItem('selected_style_set', this.value);
-            localStorage.removeItem('imported_settings');
-            loadSettingsFromFile('setting_sets/' + this.value);
-        } else {
-            // איפוס — מחק הכל וטען ברירת מחדל
-            localStorage.removeItem('selected_style_set');
-            localStorage.removeItem('imported_settings');
-            if (_defaultSettings) applySettingsToDOM(_defaultSettings, true);
+        try {
+            if (this.value) {
+                // שמור את הבחירה ב-localStorage, נקה הגדרות מיובאות
+                localStorage.setItem('selected_style_set', this.value);
+                localStorage.removeItem('imported_settings');
+                loadSettingsFromFile('setting_sets/' + this.value);
+            } else {
+                // איפוס — מחק הכל וטען ברירת מחדל
+                localStorage.removeItem('selected_style_set');
+                localStorage.removeItem('imported_settings');
+                if (_defaultSettings) applySettingsToDOM(_defaultSettings, true);
+            }
+        } catch (storageErr) {
+            // [תיקון] בהקשרים שבהם localStorage חסום — אל תהרוס את החלפת הסגנון עצמה
+            console.warn('שמירת בחירת סגנון נכשלה (localStorage):', storageErr);
+            if (this.value) loadSettingsFromFile('setting_sets/' + this.value);
+            else if (_defaultSettings) applySettingsToDOM(_defaultSettings, true);
         }
     });
     document.getElementById('btn-export-settings').addEventListener('click', exportSettings);
@@ -226,8 +244,12 @@ function importSettings(event) {
             var settings = JSON.parse(e.target.result);
             applySettingsToDOM(settings, true);
             // שמור את ההגדרות המיובאות ב-localStorage כדי שלא יאופסו בריענון
-            localStorage.setItem('imported_settings', JSON.stringify(settings));
-            localStorage.removeItem('selected_style_set'); // נקה סט ידני
+            try {
+                localStorage.setItem('imported_settings', JSON.stringify(settings));
+                localStorage.removeItem('selected_style_set'); // נקה סט ידני
+            } catch (storageErr) {
+                console.warn('שמירת הגדרות מיובאות נכשלה (localStorage):', storageErr);
+            }
             console.log('✓ הגדרות יובאו (' + Object.keys(settings).length + ' ערכים)');
         } catch (err) {
             alert('שגיאת ייבוא: ' + err.message);

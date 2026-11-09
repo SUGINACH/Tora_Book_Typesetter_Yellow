@@ -24,6 +24,13 @@
 
 const CBG_TEXTURE_SVG = "data:image/svg+xml,%3Csvg width='32' height='55' viewBox='0 0 32 55' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M16,27 C10,22 5,14 5,5 C5,0 10,0 16,5 C22,0 27,0 27,5 C27,14 22,22 16,27 Z M16,27 C10,32 5,40 5,49 C5,55 10,55 16,49 C22,55 27,55 27,49 C27,40 22,32 16,27 Z M16,14 A3.5,3.5 0 1,0 16,21 A3.5,3.5 0 1,0 16,14 Z' fill='%239e9e9e' fill-opacity='0.18'/%3E%3C/svg%3E";
 
+/* [תיקון אבטחה] escape לטקסט חופשי שמוזרק ל-innerHTML (כותרות עליונות, דפי שער).
+   המקורות: טקסט המסמך, שדות הגדרות שהמנוע ממלא מהמסמך, וקבצי הגדרות מיובאים —
+   בלי escape ערך זדוני מתוך קובץ טקסט/JSON מיובא מוזרק כ-HTML לתצוגה ולייצוא. */
+function escTxt(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+/* escape לערך הנכנס לתוך attribute (src="..." וכד') */
+function escAttr(s) { return escTxt(s).replace(/"/g, '&quot;'); }
+
 /* ==========================================================================
    1. מאגרי רישום דינמי עבור קובצי JSON חיצוניים ותיקיות
    ========================================================================== */
@@ -71,7 +78,7 @@ function wrapShaarMedia(contentStr) {
     if (!contentStr) return '';
     const trimmed = contentStr.trim();
     if (trimmed.startsWith('<svg') || trimmed.startsWith('<div')) return trimmed;
-    return `<img class="custom-bg-img" src="${trimmed}" alt="שער" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:fill;" />`;
+    return `<img class="custom-bg-img" src="${escAttr(trimmed)}" alt="שער" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:fill;" />`;
 }
 
 function resolveShaarBoxStyle(shaarType, shaarId, uTop, uBottom, uRight, uLeft, fallbackStyle) {
@@ -105,26 +112,27 @@ function splitTextInHalf(text, part) {
 
 function renderHeaderSectionHTML(type, customText, h1Title, h2Title, h3Title, bookTitle, tocFallback, contextExtra = {}) {
     const { simanBadge = '', rawH2WithoutSiman = '', h4Title = '', pageNum = '', firstLastWords = '' } = contextExtra;
-    
-    if (type === 'h1') return h1Title || tocFallback || '';
-    if (type === 'h2') return h2Title || tocFallback || '';
-    if (type === 'h2_with_siman') return (simanBadge ? simanBadge + ' - ' : '') + (rawH2WithoutSiman || h2Title || tocFallback || '');
-    if (type === 'h2_without_siman') return rawH2WithoutSiman || h2Title || tocFallback || '';
-    if (type === 'siman_alone') return simanBadge || '';
-    if (type === 'h3') return h3Title || '';
-    if (type === 'h4') return h4Title || '';
-    if (type === 'book_title') return bookTitle || '';
-    if (type === 'book_title_split_r') return splitTextInHalf(bookTitle, 'first');
-    if (type === 'book_title_split_l') return splitTextInHalf(bookTitle, 'second');
-    if (type === 'page_number') return pageNum ? String(pageNum) : '';
-    if (type === 'first_word_last_word') return firstLastWords || '';
-    if (type === 'custom') return customText || '';
+    /* [תיקון אבטחה] כל הענפים הטקסטואליים מוחלפים ב-escape — הערכים מגיעים מטקסט המסמך
+       או מהגדרות, ומוזרקים ל-innerHTML של הכותרת העליונה בכל עמוד. */
+    if (type === 'h1') return escTxt(h1Title || tocFallback || '');
+    if (type === 'h2') return escTxt(h2Title || tocFallback || '');
+    if (type === 'h2_with_siman') return escTxt((simanBadge ? simanBadge + ' - ' : '') + (rawH2WithoutSiman || h2Title || tocFallback || ''));
+    if (type === 'h2_without_siman') return escTxt(rawH2WithoutSiman || h2Title || tocFallback || '');
+    if (type === 'siman_alone') return escTxt(simanBadge || '');
+    if (type === 'h3') return escTxt(h3Title || '');
+    if (type === 'h4') return escTxt(h4Title || '');
+    if (type === 'book_title') return escTxt(bookTitle || '');
+    if (type === 'book_title_split_r') return escTxt(splitTextInHalf(bookTitle, 'first'));
+    if (type === 'book_title_split_l') return escTxt(splitTextInHalf(bookTitle, 'second'));
+    if (type === 'page_number') return pageNum ? escTxt(String(pageNum)) : '';
+    if (type === 'first_word_last_word') return escTxt(firstLastWords || '');
+    if (type === 'custom') return escTxt(customText || '');
 
     if (HEADER_ORNAMENTS[type]) return HEADER_ORNAMENTS[type];
     if (EXTERNAL_ALL_ORNAMENTS[type]) return EXTERNAL_ALL_ORNAMENTS[type];
     if (type === 'custom_img') {
         const imgSrc = EngineInputs.el('data-hdr-c-img') ? EngineInputs.el('data-hdr-c-img').value : '';
-        return imgSrc ? `<img src="${imgSrc}" style="max-height: 18px; max-width: 100%; object-fit: contain; vertical-align: middle;" />` : '';
+        return imgSrc ? `<img src="${escAttr(imgSrc)}" style="max-height: 18px; max-width: 100%; object-fit: contain; vertical-align: middle;" />` : '';
     }
     return '';
 }
@@ -153,7 +161,7 @@ function getSectionDividerHTML(type) {
     } else if (type === 'custom_img') {
         const imgSrc = EngineInputs.el('data-sec-div-img')?.value || '';
         if (imgSrc) {
-            content = `<img src="${imgSrc}" style="max-width: 100%; max-height: 45px; margin: auto; display: block; object-fit: contain; ${dimStyle}" />`;
+            content = `<img src="${escAttr(imgSrc)}" style="max-width: 100%; max-height: 45px; margin: auto; display: block; object-fit: contain; ${dimStyle}" />`;
         }
     }
     if (!content) return '';
@@ -180,7 +188,7 @@ function getHeadingOrnamentHTML(type, isTop = false, isH2 = true) {
     } else if (type === 'custom_img') {
         const imgSrc = EngineInputs.el('data-sec-div-img')?.value || '';
         if (imgSrc) {
-            inner = `<img src="${imgSrc}" style="max-width: 200px; max-height: 35px; margin: auto; display: block; object-fit: contain; ${flipStyle} ${sizeStyle}" />`;
+            inner = `<img src="${escAttr(imgSrc)}" style="max-width: 200px; max-height: 35px; margin: auto; display: block; object-fit: contain; ${flipStyle} ${sizeStyle}" />`;
         }
     }
     if (!inner) return '';
@@ -211,7 +219,7 @@ function renderSideOrnamentHTML(styleKey, isLeft = false, context = 'h3') {
         return `<span class="side-ornament-wrap" style="display:inline-flex; align-items:center; justify-content:center; ${flipStyle} ${sizeStyle}">${svgContent}</span>`;
     } else if (styleKey === 'custom_img') {
         const imgSrc = EngineInputs.el('data-hdr-c-img')?.value || EngineInputs.el('data-sec-div-img')?.value || '';
-        return imgSrc ? `<img src="${imgSrc}" style="max-height: 100%; max-width: 100%; object-fit: contain; vertical-align: middle; ${flipStyle} ${sizeStyle}" />` : '';
+        return imgSrc ? `<img src="${escAttr(imgSrc)}" style="max-height: 100%; max-width: 100%; object-fit: contain; vertical-align: middle; ${flipStyle} ${sizeStyle}" />` : '';
     }
     return '';
 }
@@ -254,7 +262,11 @@ function buildNoteRuleElement() {
     segR.className = 'rule-seg';
     const mid = document.createElement('span');
     mid.className = 'rule-glyphs';
-    mid.textContent = NOTE_RULE_GLYPHS[style] || '';
+    /* [תיקון] גליף חיצוני מ-note_rules.json הוא מסמך SVG שלם — textContent הציג אותו
+       כטקסט גולמי (<?xml ...>) במקום כגרפיקה. גליפים מובנים הם טקסט רגיל ונשארים ב-textContent. */
+    const glyph = NOTE_RULE_GLYPHS[style] || '';
+    if (glyph.startsWith('<')) mid.innerHTML = glyph;
+    else mid.textContent = glyph;
     const segL = document.createElement('span');
     segL.className = 'rule-seg';
     rule.appendChild(segR);
@@ -384,18 +396,18 @@ function renderMainShaar(container, themeId, pageIndex) {
       <div>
         <div class="bsd-header"></div>
         <div class="sefer-label"></div>
-        <div class="book-title-main">${title}</div>
-        <div class="book-subtitle">${subtitle}</div>
+        <div class="book-title-main">${escTxt(title)}</div>
+        <div class="book-subtitle">${escTxt(subtitle)}</div>
         <svg style="width: 180px; height: 24px; margin: 12px auto;" viewBox="0 0 400 40">
           <circle cx="200" cy="20" r="10" fill="none" stroke="#000" stroke-width="4.5"/><circle cx="200" cy="20" r="4.5" fill="#000"/>
           <path d="M182,20 C182,24 165,27 140,27 C90,27 40,22 5,20 C40,18 90,13 140,13 C165,13 182,16 182,20 Z" fill="#000"/>
           <path d="M218,20 C218,24 235,27 260,27 C310,27 360,22 395,20 C360,18 310,13 260,13 C235,13 218,16 218,20 Z" fill="#000"/>
         </svg>
       </div>
-      <div class="book-description">${desc}</div>
-      <div class="book-sections-summary">${sections}</div>
-      <div class="author-block"><br><span class="author-name">${author}</span></div>
-      <div class="publication-footer">${year}</div>
+      <div class="book-description">${escTxt(desc)}</div>
+      <div class="book-sections-summary">${escTxt(sections)}</div>
+      <div class="author-block"><br><span class="author-name">${escTxt(author)}</span></div>
+      <div class="publication-footer">${escTxt(year)}</div>
     </div>
   `;
     container.appendChild(page);
@@ -423,7 +435,7 @@ function renderBackShaar(container, themeId, pageIndex) {
             bgHTML = BUILTIN_SHAAR_THEMES[selBack].backHTML;
         }
     } else if (customTheme && customTheme.backShaar && customTheme.backShaar.svgData) {
-        bgHTML = `<img class="custom-bg-img" src="${customTheme.backShaar.svgData}" alt="שער אחורי">`;
+        bgHTML = `<img class="custom-bg-img" src="${escAttr(customTheme.backShaar.svgData)}" alt="שער אחורי">`;
     } else if (BUILTIN_SHAAR_THEMES[themeId]) {
         bgHTML = BUILTIN_SHAAR_THEMES[themeId].backHTML;
     } else {
@@ -459,11 +471,11 @@ function renderBackShaar(container, themeId, pageIndex) {
       <div style="width:100%; display:flex; flex-direction:column; justify-content:space-evenly; height:100%; padding: 10px 0;">
         <div class="back-shaar-block">
           <div style="font-size: 13.5pt; font-weight: 800; margin-bottom: 6px; color:#111;">כל הזכויות שמורות</div>
-          <div style="font-size: 10pt; line-height: 1.6; max-width: 92%; margin: 0 auto; color: #222; white-space: pre-wrap;">${copyrightText}</div>
+          <div style="font-size: 10pt; line-height: 1.6; max-width: 92%; margin: 0 auto; color: #222; white-space: pre-wrap;">${escTxt(copyrightText)}</div>
         </div>
-        ${publishingText ? `<div class="back-shaar-block" style="font-size: 11pt; font-weight:700; line-height: 1.5; color: #1e3a8a; white-space: pre-wrap;">${publishingText}</div>` : ''}
-        ${contactText ? `<div class="back-shaar-block" style="font-size: 10pt; line-height: 1.5; color: #334155; white-space: pre-wrap;">${contactText}</div>` : ''}
-        ${extraText ? `<div class="back-shaar-block" style="font-size: 9.5pt; line-height: 1.45; color: #64748b; white-space: pre-wrap;">${extraText}</div>` : ''}
+        ${publishingText ? `<div class="back-shaar-block" style="font-size: 11pt; font-weight:700; line-height: 1.5; color: #1e3a8a; white-space: pre-wrap;">${escTxt(publishingText)}</div>` : ''}
+        ${contactText ? `<div class="back-shaar-block" style="font-size: 10pt; line-height: 1.5; color: #334155; white-space: pre-wrap;">${escTxt(contactText)}</div>` : ''}
+        ${extraText ? `<div class="back-shaar-block" style="font-size: 9.5pt; line-height: 1.45; color: #64748b; white-space: pre-wrap;">${escTxt(extraText)}</div>` : ''}
       </div>
     </div>
   `;
@@ -497,7 +509,7 @@ function renderSubShaar(container, token, themeId, pageIndex) {
             bgHTML = BUILTIN_SHAAR_THEMES[selSub].subHTML;
         }
     } else if (customTheme && customTheme.subShaar && customTheme.subShaar.svgData) {
-        bgHTML = `<img class="custom-bg-img" src="${customTheme.subShaar.svgData}" alt="שער משנה">`;
+        bgHTML = `<img class="custom-bg-img" src="${escAttr(customTheme.subShaar.svgData)}" alt="שער משנה">`;
     } else if (BUILTIN_SHAAR_THEMES[themeId]) {
         bgHTML = BUILTIN_SHAAR_THEMES[themeId].subHTML;
     } else {
@@ -538,12 +550,12 @@ function renderSubShaar(container, token, themeId, pageIndex) {
     <div class="theme-bounded-content" data-shaar-type="sub" data-shaar-id="${shaarBoxId}" style="${boxStyle} justify-content:center;">
       ${getShaarBoxEditorHTML('sub')}
       <div class="sefer-label"></div>
-      <div class="book-title-main" style="font-size: 36pt;">${titleMain}</div>
+      <div class="book-title-main" style="font-size: 36pt;">${escTxt(titleMain)}</div>
       ${titleSub ? `
         <svg style="width: 140px; height: 25px; margin: 15px auto;" viewBox="0 0 300 30">
           <path d="M10,15 Q75,5 140,15 Q145,10 150,5 Q155,10 160,15 Q225,5 290,15 Q225,25 160,15 Q155,20 150,25 Q145,20 140,15 Q75,25 10,15 Z" fill="#222"/>
         </svg>
-        <div class="book-subtitle" style="font-size: 21pt;">${titleSub}</div>` : ''}
+        <div class="book-subtitle" style="font-size: 21pt;">${escTxt(titleSub)}</div>` : ''}
     </div>
   `;
     container.appendChild(page);
@@ -605,7 +617,10 @@ function registerExternalHeader(id, svgContent) {
 }
 
 function registerExternalDivider(id, svgContent) {
-    SECTION_DIVIDERS[id] = `<div style="grid-column: 3 / 6; text-align: center; margin: 16px auto 6px auto; max-width: 50%;">${svgContent}</div>`;
+    /* [תיקון] רישום ה-SVG הגולמי בלבד — getSectionDividerHTML כבר עוטף את התוכן
+       ב-.sec-divider-wrap עם אותם מרווחים; העטיפה הכפולה שהייתה כאן הוסיפה מרווחים
+       כפולים ו-max-width: 50% לכל מחיצה חיצונית (בניגוד למחיצות המובנות). */
+    SECTION_DIVIDERS[id] = svgContent;
     registerExternalAllOrnament(id, svgContent);
 }
 

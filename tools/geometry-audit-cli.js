@@ -1394,7 +1394,7 @@ async function main() {
             if (geometryFindings.length) {
                 const sample = geometryFindings.slice(0, 8).map(issue =>
                     (issue.kind || 'unknown') + (issue.location ? ' @ ' + issue.location : '') +
-                    (issue.message ? ': ' + String(issue.message).replace(/[\\r\\n]+/g, ' ').slice(0, 180) : '')
+                    (issue.message ? ': ' + String(issue.message).replace(/[\r\n]+/g, ' ').slice(0, 180) : '')
                 );
                 throw new Error('Active geometry gate failed: ' + geometryFindings.length +
                     ' containment/overlap/overflow finding(s): ' + sample.join(' | '));

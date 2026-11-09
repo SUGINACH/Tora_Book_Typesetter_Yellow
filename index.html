@@ -1080,7 +1080,7 @@
 
               <div style="font-weight:700; font-size:8pt; margin-bottom:2px;">מעל הרווח המרכזי:</div>
               <div class="inline-cfg-row" style="margin-bottom: 2px;">
-                <select id="hdr-c-type" style="flex:1;">
+                <select id="hdr-c-type" style="flex:1;" onchange="document.getElementById('row-hdr-c-img').style.display = this.value === 'custom_img' ? 'flex' : 'none';">
                   <option value="same_as_even">(= זהה לעמוד זוגי)</option>
                   <option value="spear" selected="selected">רומח (SVG)</option>
                   <option value="h1">כותרת 1 (שם החלק)</option>
@@ -1338,6 +1338,10 @@
   <script src="decorations.js"></script>
   <script src="typesetter.js"></script>
   <script src="settings-manager.js"></script>
+  <!-- [תיקון] test-suite.js נטען כאן כדי שכפתורי "מסמך קבוע"/"מסמך רנדומלי" בטאב הבדיקה
+       יעבדו (generateTestText / generateTestTextSeeded מוגדרים בו; הקובץ הזה רק מגדיר
+       פונקציות — אין לו תופעות לוואי בטעינה). -->
+  <script src="test-suite.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

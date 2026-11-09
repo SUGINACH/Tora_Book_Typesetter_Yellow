@@ -183,6 +183,11 @@
 
     // האזנה להודעות מהדף הראשי
     window.addEventListener('message', async function(e) {
+        /* [תיקון אבטחה] קבלת הודעות רק מאותו מקור: הדף הראשי (same-origin) או מהעמוד
+           עצמו — ה-CLI והסקריפטים (layout-ab.mjs וכו') שולחים window.postMessage מתוך
+           העמוד. דפים זרים שמטמיעים את renderer.html לא יכולים להזריק טקסט/הגדרות
+           ולקבל בחזרה את ה-HTML המעומד. */
+        if (e.origin !== location.origin) return;
         const msg = e.data;
         if (!msg || !msg.type) return;
 
@@ -194,6 +199,10 @@
                 } catch (err) {
                     e.source.postMessage({ type: 'render-error', error: err.message }, e.origin);
                 }
+            }).catch(err => {
+                /* [תיקון] בלי catch כאן, שגיאה בעצם הדיווח (למשל e.source שנסגר) דוחה את
+                   הבטחת התור לצמיתות — וכל הודעות העימוד/האבחון הבאות נבלעות בשקט. */
+                console.error('[renderer-bridge] typeset queue error:', err);
             });
         } else if (msg.type === 'diagnose') {
             /* [V22/שלב 3] דוח אבחון: מעמד מחדש את הקלט האחרון עם יומן החלטות (אותה פריסה — נבדק) ומחזיר דוח */
@@ -208,6 +217,8 @@
                 } catch (err) {
                     e.source.postMessage({ type: 'diagnose-error', error: err.message }, e.origin);
                 }
+            }).catch(err => {
+                console.error('[renderer-bridge] diagnose queue error:', err);
             });
         } else if (msg.type === 'getHTML') {
             const bookContainer = document.getElementById('book-container');

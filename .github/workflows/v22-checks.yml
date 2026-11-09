@@ -48,10 +48,12 @@ jobs:
         run: google-chrome --version
       - name: Determinism self-test (engine settles fonts by itself, no external warm-up)
         run: |
+          set -o pipefail
           mkdir -p artifacts
           node scripts/layout-ab.mjs --a . --text mid_long_test_text.txt --lines 600 --audit geometry-audit.js,geometry-audit-extra.js --selftest --no-warmup 2>&1 | tee artifacts/selftest.txt
       - name: Diagnostic report and trace check
         run: |
+          set -o pipefail
           node scripts/layout-explain.mjs --root . --text mid_long_test_text.txt --lines 600 --audit geometry-audit.js,geometry-audit-extra.js --top 8 --json artifacts/explain.json 2>&1 | tee artifacts/explain.txt
       - name: Job summary
         if: always()
@@ -109,6 +111,7 @@ jobs:
         run: npm install --no-save puppeteer-core
       - name: A/B on a series of small setting variants
         run: |
+          set -o pipefail
           mkdir -p artifacts
           node head/scripts/layout-ab.mjs --a base --b head --text head/mid_long_test_text.txt --lines 600 --variants 3 --audit head/geometry-audit.js,head/geometry-audit-extra.js 2>&1 | tee artifacts/ab.txt
       - name: Job summary
@@ -147,6 +150,7 @@ jobs:
         run: npm install --no-save puppeteer-core
       - name: A/B on a series of small setting variants
         run: |
+          set -o pipefail
           mkdir -p artifacts
           node head/scripts/layout-ab.mjs --a base --b head --text head/mid_long_test_text.txt --lines 600 --variants 3 --audit head/geometry-audit.js,head/geometry-audit-extra.js 2>&1 | tee artifacts/ab.txt
       - name: Publish result as an annotation (readable through the API)
