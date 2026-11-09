@@ -20,7 +20,8 @@
     const loadedFonts = () => new Set([...document.fonts].filter(f => f.status === 'loaded').map(fontKey));
     const erroredFonts = () => [...document.fonts].filter(f => f.status === 'error').map(fontKey);
     /* document.fonts.ready עלול לא להגיע כשיש מאות הגדרות גופן (ראו הערה ב-app.js:ensureBuiltinFontsLoaded) — לכן timeout */
-    const settled = ms => Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, ms))]);
+    /* כשאין גופן בטעינה (status === 'loaded') אין למה לחכות: ההמתנה ל-ready אחרי כל עימוד עלתה כ-1.5 שניות בהרצות חוזרות */
+    const settled = ms => (document.fonts.status === 'loaded' ? Promise.resolve() : Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, ms))]));
 
     /* מריץ runFn (עימוד סינכרוני) עד שקבוצת הגופנים הטעונים יציבה.
        מחזיר: passes (כמה הרצות), lateFonts (גופנים שנטענו בזמן עימוד), fontErrors, unstable (לא התייצב ב-maxPasses),
@@ -29,19 +30,21 @@
         const max = (opts && opts.maxPasses) || 3;
         const waitMs = (opts && opts.waitMs) || 3000;
         const late = [];
-        let passes = 0, unstable = false;
+        let passes = 0, unstable = false, waitedMs = 0;
         for (;;) {
             const before = loadedFonts();
             runFn();
             passes++;
+            const tw = Date.now();
             await settled(waitMs);
+            waitedMs += Date.now() - tw;
             const newly = [...loadedFonts()].filter(k => !before.has(k));
             if (!newly.length) break;
             late.push(...newly);
             if (passes >= max) { unstable = true; break; }
         }
         const now = [...loadedFonts()].sort();
-        return { passes, lateFonts: late, fontErrors: erroredFonts(), unstable, fontsHash: fnv(now.join('\n')), fontCount: now.length };
+        return { passes, waitedMs, lateFonts: late, fontErrors: erroredFonts(), unstable, fontsHash: fnv(now.join('\n')), fontCount: now.length };
     }
 
     /* ===== שלב 2: צילום הגדרות =====

@@ -122,3 +122,16 @@ test('runUntilFontsStable: גופן שממשיך להיטען ללא הפסקה 
     assert.equal(report.passes, 3);
     assert.equal(report.unstable, true);
 });
+
+test('runUntilFontsStable: כשהגופנים טעונים (status loaded) לא ממתין ל-ready (שלא מגיע)', async () => {
+    const fonts = [{ family: 'Base', weight: '400', style: 'normal', status: 'loaded' }];
+    fonts.status = 'loaded';
+    fonts.ready = new Promise(() => {});   // לעולם לא מגיע
+    globalThis.document = { fonts, getElementById: () => null, querySelectorAll: () => [] };
+    const EI = loadModule();
+    const t0 = Date.now();
+    const report = await EI.runUntilFontsStable(() => {}, { waitMs: 5000 });
+    assert.ok(Date.now() - t0 < 1000, 'לא חיכה ל-timeout');
+    assert.equal(report.passes, 1);
+    assert.equal(report.waitedMs < 1000, true);
+});

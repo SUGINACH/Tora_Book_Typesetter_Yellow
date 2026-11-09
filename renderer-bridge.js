@@ -128,13 +128,15 @@
        אם גופן בכל זאת נטען באמצע, העימוד רץ שוב והדוח מציג אותו ב-lateFonts. */
     async function preflightFonts() {
         if (!document.fonts) return null;
+        const t0 = Date.now();
         const faces = Array.from(document.fonts);
-        const results = await Promise.all(faces.map(async face => {
+        const pending = faces.filter(face => face.status !== 'loaded');   // פנים שכבר נטענו לא נטענות שוב (חסכון אחרי ההרצה הראשונה)
+        const results = await Promise.all(pending.map(async face => {
             try { await face.load(); return { family: face.family, weight: face.weight, style: face.style, status: face.status }; }
             catch (err) { return { family: face.family, weight: face.weight, style: face.style, status: 'error', error: String((err && err.message) || err) }; }
         }));
-        await document.fonts.ready;
-        window.__fontPreflight = { faceCount: results.length, loaded: results.filter(r => r.status === 'loaded').length,
+        if (pending.length) await document.fonts.ready;
+        window.__fontPreflight = { ms: Date.now() - t0, faceCount: faces.length, requested: results.length, loaded: faces.length - results.filter(r => r.status === 'error').length,
             failed: results.filter(r => r.status === 'error').length, failures: results.filter(r => r.status === 'error').slice(0, 20) };
         return window.__fontPreflight;
     }

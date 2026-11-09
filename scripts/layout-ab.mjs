@@ -164,7 +164,7 @@ try {
 
 if (o.save) { fs.writeFileSync(o.save + '.A.json', JSON.stringify(resA)); if (resB) fs.writeFileSync(o.save + '.B.json', JSON.stringify(resB)); }
 const sum = (rs, f) => rs.reduce((s, r) => s + f(r), 0);
-const inputsLine = r => r && r.report && r.report.settingsUsedHash ? `טקסט ${r.report.textHash} | הגדרות(${r.report.settingsUsedCount}) ${r.report.settingsUsedHash} | גופנים(${r.report.fontCount}) ${r.report.fontsHash} | css ${r.report.cssVarsHash}${r.report.settingsMissing.length ? ' | חסרות: ' + r.report.settingsMissing.join(',') : ''}${r.report.derivedChanged.length ? ' | המנוע כתב לפקדים: ' + r.report.derivedChanged.join(',') : ''}` : null;
+const inputsLine = r => r && r.report && r.report.settingsUsedHash ? `טקסט ${r.report.textHash} | הגדרות(${r.report.settingsUsedCount}) ${r.report.settingsUsedHash} | גופנים(${r.report.fontCount}) ${r.report.fontsHash} | css ${r.report.cssVarsHash}${r.report.settingsMissing.length ? ' | חסרות: ' + r.report.settingsMissing.join(',') : ''}${r.report.derivedChanged.length ? ' | המנוע כתב לפקדים: ' + r.report.derivedChanged.join(',') : ''} | המתנה לגופנים ${r.report.waitedMs ?? '-'}ms, preflight ${r.report.fontPreflight ? r.report.fontPreflight.ms : '-'}ms` : null;
 for (const [nm, rs] of [['A', resA], ['B', resB]]) { const l = rs && inputsLine(rs[0]); if (l) console.log(`קלטים ${nm} (בסיס): ${l}`); }
 if (resB) resA.forEach((ra, i) => { const x = ra.report, y = resB[i].report; if (!x || !y || !x.settingsUsedHash || !y.settingsUsedHash) return;
     const diffs = ['textHash', 'settingsUsedHash', 'cssVarsHash', 'fontsHash'].filter(k => x[k] !== y[k]);
